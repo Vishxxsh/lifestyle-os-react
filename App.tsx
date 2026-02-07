@@ -5,7 +5,7 @@ import { TabHabits } from './components/TabHabits';
 import { TabMeals } from './components/TabMeals';
 import { TabGoals } from './components/TabGoals';
 import { TabExport } from './components/TabExport';
-import { Home, CheckSquare, Utensils, Target, Database, Plus, X, Bell } from 'lucide-react';
+import { Home, CheckSquare, Utensils, Target, Database, Plus, X, Bell, AlarmClock } from 'lucide-react';
 import { getTodayStr } from './utils';
 
 // Toast Component
@@ -31,10 +31,46 @@ const Toast: React.FC<{ title: string; message: string; onClose: () => void }> =
   );
 };
 
+// Full Screen Alarm Overlay
+const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => void }> = ({ title, body, onDismiss }) => {
+    return (
+        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-white animate-fade-in">
+            <div className="animate-bounce mb-8">
+                <AlarmClock size={64} className="text-red-500" />
+            </div>
+            <h2 className="text-3xl font-black mb-2 text-center">{title}</h2>
+            <p className="text-gray-300 mb-12 text-center text-lg">{body}</p>
+            <button 
+                onClick={onDismiss}
+                className="w-full max-w-sm py-5 bg-white text-black font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform"
+            >
+                DISMISS ALARM
+            </button>
+        </div>
+    );
+};
+
 // Component to handle background checks for notifications
-const NotificationManager: React.FC<{ onNotify: (title: string, msg: string) => void }> = ({ onNotify }) => {
+// Now exposes an "Active Alarm" state to the parent
+const NotificationManager: React.FC<{ 
+    onNotify: (title: string, msg: string) => void,
+    onAlarmStart: (title: string, msg: string) => void
+    alarmDismissSignal: number // Incremented by parent to stop sound
+}> = ({ onNotify, onAlarmStart, alarmDismissSignal }) => {
   const { state } = useApp();
   const lastCheckedMinute = useRef<string>("");
+  const activeOscillator = useRef<OscillatorNode | null>(null);
+
+  // Effect to handle dismissal signal
+  useEffect(() => {
+      if (activeOscillator.current) {
+          try {
+              activeOscillator.current.stop();
+              activeOscillator.current.disconnect();
+          } catch (e) { /* ignore */ }
+          activeOscillator.current = null;
+      }
+  }, [alarmDismissSignal]);
 
   const playSound = (type: 'alarm' | 'chime') => {
     try {
@@ -50,29 +86,29 @@ const NotificationManager: React.FC<{ onNotify: (title: string, msg: string) => 
       gain.connect(ctx.destination);
       
       if (type === 'alarm') {
-        // ALARM: Aggressive "Beep... Beep..." pattern for 30 seconds
+        // ALARM: Aggressive loop
         osc.type = 'square';
-        osc.frequency.setValueAtTime(880, now); // High pitch A5
+        osc.frequency.setValueAtTime(880, now);
         
-        // Loop a beep every 1 second (0.5s ON, 0.5s OFF)
-        const duration = 30; // 30 seconds
+        const duration = 30; 
         for(let i=0; i < duration; i++) {
-           // ON
            gain.gain.setValueAtTime(0.2, now + i);
-           // OFF
            gain.gain.setValueAtTime(0, now + i + 0.5);
         }
         
         osc.start(now);
         osc.stop(now + duration);
+        
+        // Save ref to stop it later
+        activeOscillator.current = osc;
       } else {
-        // CHIME: Gentle single "Ding"
+        // CHIME
         osc.type = 'sine';
         osc.frequency.setValueAtTime(880, now);
-        osc.frequency.exponentialRampToValueAtTime(440, now + 0.3); // Drop pitch
+        osc.frequency.exponentialRampToValueAtTime(440, now + 0.3);
         
         gain.gain.setValueAtTime(0.1, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3); // Fade out
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
         
         osc.start(now);
         osc.stop(now + 0.35);
@@ -83,14 +119,12 @@ const NotificationManager: React.FC<{ onNotify: (title: string, msg: string) => 
   };
 
   useEffect(() => {
-    // Check every 5 seconds to ensure we don't miss the minute window due to drift
     const checkReminders = () => {
       const now = new Date();
       const currentHours = now.getHours().toString().padStart(2, '0');
       const currentMinutes = now.getMinutes().toString().padStart(2, '0');
       const currentTime = `${currentHours}:${currentMinutes}`;
       
-      // If we already processed this minute, skip
       if (currentTime === lastCheckedMinute.current) return;
 
       const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
@@ -105,7 +139,6 @@ const NotificationManager: React.FC<{ onNotify: (title: string, msg: string) => 
         let shouldNotify = false;
         let isDailyAlarm = false;
 
-        // 1. Daily Alarm Check
         if (habit.reminderTime === currentTime) {
           shouldNotify = true;
           isDailyAlarm = true;
@@ -113,8 +146,6 @@ const NotificationManager: React.FC<{ onNotify: (title: string, msg: string) => 
           notificationBody = `It's ${habit.reminderTime}. Let's get it done.`;
         }
 
-        // 2. Interval Check
-        // Only run interval checks if we haven't checked this minute yet
         if (!shouldNotify && habit.reminderInterval && habit.reminderInterval > 0) {
            if (currentTotalMinutes % habit.reminderInterval === 0) {
              const val = state.logs[today]?.[habit.id];
@@ -129,28 +160,28 @@ const NotificationManager: React.FC<{ onNotify: (title: string, msg: string) => 
         }
 
         if (shouldNotify) {
-            if (isDailyAlarm) alarmTriggered = true;
-            else chimeTriggered = true;
-            
-            // Send system notification
+            if (isDailyAlarm) {
+                alarmTriggered = true;
+                // For alarms, we want to show the overlay immediately
+                onAlarmStart(notificationTitle, notificationBody);
+            } else {
+                chimeTriggered = true;
+                onNotify(notificationTitle, notificationBody);
+            }
             sendNotification(notificationTitle, notificationBody);
-            // Trigger in-app toast
-            onNotify(notificationTitle, notificationBody);
         }
       });
 
-      // Play sound (Prioritize Alarm over Chime)
       if (alarmTriggered) playSound('alarm');
       else if (chimeTriggered) playSound('chime');
 
-      // Update last checked minute so we don't fire again until it changes
       lastCheckedMinute.current = currentTime;
     };
 
-    const interval = setInterval(checkReminders, 5000); // Check every 5s
+    const interval = setInterval(checkReminders, 5000); 
 
     return () => clearInterval(interval);
-  }, [state.habits, state.logs, onNotify]);
+  }, [state.habits, state.logs, onNotify, onAlarmStart]);
 
   const sendNotification = (title: string, body: string) => {
     if (!("Notification" in window)) return;
@@ -171,6 +202,15 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'home' | 'habits' | 'meals' | 'goals' | 'data'>('home');
   const { fabOnClick } = useApp();
   const [toast, setToast] = useState<{title: string, msg: string} | null>(null);
+  
+  // Alarm Overlay State
+  const [activeAlarm, setActiveAlarm] = useState<{title: string, msg: string} | null>(null);
+  const [dismissSignal, setDismissSignal] = useState(0);
+
+  const handleDismissAlarm = () => {
+      setActiveAlarm(null);
+      setDismissSignal(prev => prev + 1); // Signal manager to stop sound
+  };
 
   const renderTab = () => {
     switch(activeTab) {
@@ -196,8 +236,21 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-white shadow-2xl overflow-hidden relative flex flex-col">
-      <NotificationManager onNotify={(title, msg) => setToast({ title, msg })} />
+      <NotificationManager 
+        onNotify={(title, msg) => setToast({ title, msg })} 
+        onAlarmStart={(title, msg) => setActiveAlarm({ title, msg })}
+        alarmDismissSignal={dismissSignal}
+      />
       
+      {/* Full Screen Alarm Overlay */}
+      {activeAlarm && (
+          <AlarmOverlay 
+            title={activeAlarm.title} 
+            body={activeAlarm.msg} 
+            onDismiss={handleDismissAlarm} 
+          />
+      )}
+
       {/* Toast Notification */}
       {toast && (
         <Toast 

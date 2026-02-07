@@ -1,11 +1,16 @@
 
-export type Category = 'str' | 'int' | 'vit';
+export interface CategoryDef {
+  id: string;
+  name: string;
+  color: string; // e.g. 'red', 'blue', 'green', 'purple'
+}
+
 export type HabitType = 'checkbox' | 'numeric';
 
 export interface Habit {
   id: number;
   name: string;
-  category: Category;
+  categoryId: string; // Changed from 'category' literal to ID reference
   type: HabitType;
   target?: number; // For numeric types
   reminderTime?: string; // Daily alarm "HH:MM"
@@ -45,6 +50,7 @@ export interface FoodHistoryItem {
 
 export interface AppState {
   user: UserState;
+  categories: CategoryDef[];
   habits: Habit[];
   todos: Todo[];
   goals: Goal[];
@@ -59,6 +65,11 @@ export interface AppState {
 
 export const INITIAL_STATE: AppState = {
   user: { xp: 0, level: 1 },
+  categories: [
+    { id: 'str', name: 'Strength', color: 'red' },
+    { id: 'int', name: 'Intellect', color: 'blue' },
+    { id: 'vit', name: 'Vitality', color: 'emerald' },
+  ],
   habits: [],
   todos: [],
   goals: [],
