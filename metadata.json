@@ -1,5 +1,0 @@
-{
-  "name": "Copy of LifestyleOS v.02",
-  "description": "I need an option to delete the habits I have previously created. The alarms and chime should have a button to snooze, or turn off. Like I dont want the alarm to ring for 30 seconds when I have heard it in the first go and did the task. I want to be able to create, edit (colours and names) of categories. For example I would like to add a category called Hygiene in the future. I also want an import option right below the option to export data. I should be able to import the saved data just so that If I shift to a new ap I can transfer my saved logs.\n\nI need to turn this into a PWA so it installs like a real app on my phone. Please create a manifest.json file and a service worker. Also update my index.html and vite.config.js to include them. ",
-  "requestFramePermissions": []
-}
