@@ -6,16 +6,20 @@ export interface CategoryDef {
 }
 
 export type HabitType = 'checkbox' | 'numeric';
+export type FrequencyType = 'daily' | 'weekly' | 'monthly';
 
 export interface Habit {
   id: number;
   name: string;
-  categoryId: string; // Changed from 'category' literal to ID reference
+  categoryId: string;
   type: HabitType;
-  target?: number; // For numeric types
-  reminderTime?: string; // Daily alarm "HH:MM"
-  reminderInterval?: number; // Minutes
-  xpReward: number; // XP gained per completion or per unit
+  target?: number; // For numeric types (e.g. 2000 ml)
+  unit?: string;   // e.g. 'ml', 'pages', 'mins'
+  frequency: FrequencyType; 
+  frequencyGoal: number; // e.g. 3 times per week
+  reminderTime?: string; 
+  reminderInterval?: number; 
+  xpReward: number; 
 }
 
 export interface Todo {
@@ -31,6 +35,12 @@ export interface Meal {
   protein: number;
 }
 
+export interface Workout {
+  id: number;
+  name: string;
+  calories: number;
+}
+
 export interface Goal {
   id: number;
   name: string;
@@ -41,6 +51,10 @@ export interface Goal {
 export interface UserState {
   xp: number;
   level: number;
+  proteinTarget: number; // Daily protein target in grams
+  theme: 'light' | 'dark';
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
 }
 
 export interface FoodHistoryItem {
@@ -57,14 +71,18 @@ export interface AppState {
   vision: string;
   // Logs: "YYYY-MM-DD": { [habitId]: value }
   logs: Record<string, Record<number, number | boolean>>;
+  // Day Scores: "YYYY-MM-DD": number (1-10)
+  dayScores: Record<string, number>;
   // Meals: "YYYY-MM-DD": Meal[]
   meals: Record<string, Meal[]>;
+  // Workouts: "YYYY-MM-DD": Workout[]
+  workouts: Record<string, Workout[]>;
   // History for smart autocomplete
   foodHistory: Record<string, FoodHistoryItem>;
 }
 
 export const INITIAL_STATE: AppState = {
-  user: { xp: 0, level: 1 },
+  user: { xp: 0, level: 1, proteinTarget: 150, theme: 'light', soundEnabled: true, vibrationEnabled: true },
   categories: [
     { id: 'str', name: 'Strength', color: 'red' },
     { id: 'int', name: 'Intellect', color: 'blue' },
@@ -75,6 +93,8 @@ export const INITIAL_STATE: AppState = {
   goals: [],
   vision: "",
   logs: {},
+  dayScores: {},
   meals: {},
+  workouts: {},
   foodHistory: {},
 };

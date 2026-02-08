@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
@@ -38,20 +39,20 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
 
       {/* Card */}
       <div 
-        className={`relative w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl transform transition-all duration-300 ${isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-4'}`}
+        className={`relative w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl p-6 shadow-2xl transform transition-all duration-300 ${isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-4'}`}
         onClick={(e) => e.stopPropagation()}
         style={{ maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
       >
         <div className="flex justify-between items-center mb-6 shrink-0">
-          <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h3>
           <button 
             onClick={onClose} 
-            className="p-2 -mr-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            className="p-2 -mr-2 rounded-full text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
           >
             <X size={20} />
           </button>
         </div>
-        <div className="overflow-y-auto -mr-2 pr-2">
+        <div className="overflow-y-auto flex-1 text-gray-900 dark:text-gray-100">
            {children}
         </div>
       </div>

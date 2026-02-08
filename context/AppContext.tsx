@@ -1,15 +1,20 @@
+
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { AppState, INITIAL_STATE, Habit, Todo, Meal, Goal, CategoryDef, HabitType } from '../types';
+import { AppState, INITIAL_STATE, Habit, Todo, Meal, Workout, Goal, CategoryDef, HabitType, UserState, FrequencyType } from '../types';
 
 interface AppContextType {
   state: AppState;
-  addHabit: (name: string, categoryId: string, type: HabitType, target?: number, reminderTime?: string, reminderInterval?: number, xpReward?: number) => void;
+  addHabit: (name: string, categoryId: string, type: HabitType, target: number | undefined, unit: string | undefined, frequency: FrequencyType, frequencyGoal: number, reminderTime?: string, reminderInterval?: number, xpReward?: number) => void;
   updateHabit: (id: number, updates: Partial<Habit>) => void;
   deleteHabit: (id: number) => void;
-  reorderHabit: (id: number, direction: 'up' | 'down') => void;
+  moveHabit: (activeId: number, overId: number) => void; 
   toggleHabit: (id: number, date: string) => void;
   incrementHabit: (id: number, date: string, amount: number) => void;
+  setHabitValue: (id: number, date: string, value: number | boolean) => void; 
   
+  // Day Score
+  setDayScore: (date: string, score: number) => void;
+
   // Category Mgmt
   addCategory: (name: string, color: string) => void;
   updateCategory: (id: string, name: string, color: string) => void;
@@ -18,11 +23,22 @@ interface AppContextType {
   addTodo: (text: string) => void;
   toggleTodo: (id: number) => void;
   deleteTodo: (id: number) => void;
+  
   addMeal: (name: string, calories: number, protein: number, date: string) => void;
   deleteMeal: (id: number, date: string) => void;
+
+  addWorkout: (name: string, calories: number, date: string) => void;
+  deleteWorkout: (id: number, date: string) => void;
+
   addGoal: (name: string, target: number, current: number) => void;
-  updateGoal: (id: number, amountToAdd: number) => void;
+  updateGoal: (id: number, amountToAdd: number) => void; 
+  editGoal: (id: number, name: string, target: number, current: number) => void; 
+  deleteGoal: (id: number) => void;
   updateVision: (text: string) => void;
+
+  // User Config
+  updateUserConfig: (updates: Partial<UserState>) => void;
+  
   resetData: () => void;
   importData: (jsonData: string) => boolean;
   // FAB Control
@@ -32,7 +48,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'lifestyleOS_v4';
+const STORAGE_KEY = 'lifestyleOS_v5'; 
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
@@ -46,21 +62,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const parsed = JSON.parse(saved);
         
-        // MIGRATION: Ensure categories exist if loading old data
+        // MIGRATIONS
         if (!parsed.categories || parsed.categories.length === 0) {
           parsed.categories = INITIAL_STATE.categories;
-          // Map old string categories to IDs if necessary, 
-          // but our INITIAL_STATE ids match the old string literals ('str', 'int', 'vit'), 
-          // so habits referencing 'str' will work fine.
         }
+        if (!parsed.dayScores) parsed.dayScores = {};
 
-        // MIGRATION: Remap old 'category' field to 'categoryId' if needed
-        if (parsed.habits && parsed.habits.length > 0 && parsed.habits[0].category) {
+        if (parsed.habits) {
             parsed.habits = parsed.habits.map((h: any) => ({
                 ...h,
-                categoryId: h.categoryId || h.category, // Use existing or fallback to old field
+                categoryId: h.categoryId || h.category,
+                frequency: h.frequency || 'daily',
+                frequencyGoal: h.frequencyGoal || 1,
+                unit: h.unit || (h.type === 'numeric' ? 'units' : undefined)
             }));
         }
+
+        if (!parsed.workouts) parsed.workouts = {};
+        if (!parsed.goals) parsed.goals = [];
+        
+        // Settings Migration
+        if (!parsed.user.theme) parsed.user.theme = 'light';
+        if (parsed.user.soundEnabled === undefined) parsed.user.soundEnabled = true;
+        if (parsed.user.vibrationEnabled === undefined) parsed.user.vibrationEnabled = true;
+        if (!parsed.user.proteinTarget) parsed.user.proteinTarget = 150;
 
         setState(parsed);
       }
@@ -78,7 +103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [state, loaded]);
 
-  const addHabit = (name: string, categoryId: string, type: HabitType, target?: number, reminderTime?: string, reminderInterval?: number, xpReward: number = 10) => {
+  const addHabit = (name: string, categoryId: string, type: HabitType, target?: number, unit?: string, frequency: FrequencyType = 'daily', frequencyGoal: number = 1, reminderTime?: string, reminderInterval?: number, xpReward: number = 10) => {
     setState(prev => ({
       ...prev,
       habits: [...prev.habits, { 
@@ -86,10 +111,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         name, 
         categoryId, 
         type, 
-        target, 
+        target,
+        unit,
+        frequency,
+        frequencyGoal, 
         reminderTime, 
         reminderInterval, 
-        xpReward 
+        xpReward
       }]
     }));
   };
@@ -104,43 +132,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteHabit = (id: number) => {
     setState(prev => ({
       ...prev,
-      habits: prev.habits.filter(h => h.id !== id),
-      // Optional: Cleanup logs for this habit? keeping them for history is usually safer
+      habits: prev.habits.filter(h => String(h.id) !== String(id)),
     }));
   };
 
-  const reorderHabit = (id: number, direction: 'up' | 'down') => {
+  const moveHabit = (activeId: number, overId: number) => {
     setState(prev => {
-      const habits = [...prev.habits];
-      const index = habits.findIndex(h => h.id === id);
-      if (index === -1) return prev;
-      
-      const currentHabit = habits[index];
-      
-      let swapIndex = -1;
-      
-      if (direction === 'up') {
-        for (let i = index - 1; i >= 0; i--) {
-          if (habits[i].categoryId === currentHabit.categoryId) {
-            swapIndex = i;
-            break;
-          }
-        }
-      } else {
-        for (let i = index + 1; i < habits.length; i++) {
-          if (habits[i].categoryId === currentHabit.categoryId) {
-            swapIndex = i;
-            break;
-          }
-        }
-      }
+        const oldIndex = prev.habits.findIndex(h => h.id === activeId);
+        const newIndex = prev.habits.findIndex(h => h.id === overId);
+        
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
 
-      if (swapIndex !== -1) {
-        [habits[index], habits[swapIndex]] = [habits[swapIndex], habits[index]];
-        return { ...prev, habits };
-      }
+        const newHabits = [...prev.habits];
+        const [movedHabit] = newHabits.splice(oldIndex, 1);
+        newHabits.splice(newIndex, 0, movedHabit);
 
-      return prev;
+        return { ...prev, habits: newHabits };
     });
   };
 
@@ -174,7 +181,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return {
         ...prev,
         logs: newLogs,
-        user: { level, xp }
+        user: { ...prev.user, level, xp }
       };
     });
   };
@@ -203,8 +210,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         level++; 
       }
 
-      return { ...prev, logs: newLogs, user: { level, xp } };
+      return { ...prev, logs: newLogs, user: { ...prev.user, level, xp } };
     });
+  };
+
+  const setHabitValue = (id: number, date: string, value: number | boolean) => {
+      setState(prev => {
+        const dayLogs = prev.logs[date] || {};
+        const newLogs = {
+            ...prev.logs,
+            [date]: { ...dayLogs, [id]: value }
+        };
+        return { ...prev, logs: newLogs };
+      });
+  };
+
+  const setDayScore = (date: string, score: number) => {
+      setState(prev => ({
+          ...prev,
+          dayScores: { ...prev.dayScores, [date]: score }
+      }));
   };
 
   // --- Category Mgmt ---
@@ -225,9 +250,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteCategory = (id: string) => {
     setState(prev => ({
       ...prev,
-      categories: prev.categories.filter(c => c.id !== id),
-      // Prevent orphaned habits by assigning them to the first available category or just keeping them (they won't render)
-      // Better to delete habits or warn user. For now, we just delete the cat.
+      categories: prev.categories.filter(c => String(c.id) !== String(id)),
     }));
   };
 
@@ -249,7 +272,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteTodo = (id: number) => {
     setState(prev => ({
       ...prev,
-      todos: prev.todos.filter(t => t.id !== id)
+      todos: prev.todos.filter(t => String(t.id) !== String(id))
     }));
   };
 
@@ -273,9 +296,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const dayMeals = prev.meals[date] || [];
         return {
             ...prev,
-            meals: { ...prev.meals, [date]: dayMeals.filter(m => m.id !== id) }
+            meals: { ...prev.meals, [date]: dayMeals.filter(m => String(m.id) !== String(id)) }
         };
      });
+  };
+
+  // --- Workouts ---
+  const addWorkout = (name: string, calories: number, date: string) => {
+    setState(prev => {
+      const dayWorkouts = prev.workouts?.[date] || [];
+      const newWorkouts = [...dayWorkouts, { id: Date.now(), name, calories }];
+      return {
+        ...prev,
+        workouts: { ...prev.workouts, [date]: newWorkouts }
+      };
+    });
+  };
+
+  const deleteWorkout = (id: number, date: string) => {
+    setState(prev => {
+       const dayWorkouts = prev.workouts?.[date] || [];
+       return {
+           ...prev,
+           workouts: { ...prev.workouts, [date]: dayWorkouts.filter(w => String(w.id) !== String(id)) }
+       };
+    });
   };
 
   // --- Goals ---
@@ -293,8 +338,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
+  const editGoal = (id: number, name: string, target: number, current: number) => {
+      setState(prev => ({
+          ...prev,
+          goals: prev.goals.map(g => g.id === id ? { ...g, name, target, current } : g)
+      }));
+  };
+
+  const deleteGoal = (id: number) => {
+      setState(prev => ({
+          ...prev,
+          goals: prev.goals.filter(g => String(g.id) !== String(id))
+      }));
+  };
+
   const updateVision = (text: string) => {
     setState(prev => ({ ...prev, vision: text }));
+  };
+
+  const updateUserConfig = (updates: Partial<UserState>) => {
+      setState(prev => ({
+          ...prev,
+          user: { ...prev.user, ...updates }
+      }));
   };
 
   const resetData = () => {
@@ -304,7 +370,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const importData = (jsonStr: string): boolean => {
       try {
           const parsed = JSON.parse(jsonStr);
-          // Basic validation
           if (!parsed.user || !parsed.habits) {
               alert("Invalid backup file format.");
               return false;
@@ -330,9 +395,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addHabit,
       updateHabit,
       deleteHabit,
-      reorderHabit,
+      moveHabit,
       toggleHabit,
       incrementHabit,
+      setHabitValue,
+      setDayScore,
       addCategory,
       updateCategory,
       deleteCategory,
@@ -341,9 +408,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteTodo,
       addMeal,
       deleteMeal,
+      addWorkout,
+      deleteWorkout,
       addGoal,
       updateGoal,
+      editGoal,
+      deleteGoal,
       updateVision,
+      updateUserConfig,
       resetData,
       importData,
       fabOnClick,

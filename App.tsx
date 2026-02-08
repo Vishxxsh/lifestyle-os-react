@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TabHome } from './components/TabHome';
 import { TabHabits } from './components/TabHabits';
 import { TabMeals } from './components/TabMeals';
 import { TabGoals } from './components/TabGoals';
-import { TabExport } from './components/TabExport';
-import { Home, CheckSquare, Utensils, Target, Database, Plus, X, Bell, AlarmClock } from 'lucide-react';
+import { TabReports } from './components/TabReports';
+import { SettingsModal } from './components/SettingsModal';
+import { Home, CheckSquare, Utensils, Target, BarChart3, Plus, X, Bell, AlarmClock } from 'lucide-react';
 import { getTodayStr } from './utils';
 
 // Toast Component
@@ -16,15 +18,15 @@ const Toast: React.FC<{ title: string; message: string; onClose: () => void }> =
   }, [onClose]);
 
   return (
-    <div className="fixed top-6 left-6 right-6 z-[100] bg-gray-900 text-white p-4 rounded-2xl shadow-2xl flex items-start gap-3 transform transition-all animate-[slideIn_0.3s_ease-out]">
-      <div className="p-2 bg-white/10 rounded-full shrink-0">
+    <div className="fixed top-6 left-6 right-6 z-[100] bg-gray-900 dark:bg-white text-white dark:text-gray-900 p-4 rounded-2xl shadow-2xl flex items-start gap-3 transform transition-all animate-[slideIn_0.3s_ease-out]">
+      <div className="p-2 bg-white/10 dark:bg-black/10 rounded-full shrink-0">
         <Bell size={20} />
       </div>
       <div className="flex-1 min-w-0">
         <h4 className="font-bold text-sm">{title}</h4>
-        <p className="text-xs text-gray-300 mt-1">{message}</p>
+        <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">{message}</p>
       </div>
-      <button onClick={onClose} className="text-gray-400 hover:text-white">
+      <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-black">
         <X size={16} />
       </button>
     </div>
@@ -32,7 +34,7 @@ const Toast: React.FC<{ title: string; message: string; onClose: () => void }> =
 };
 
 // Full Screen Alarm Overlay
-const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => void }> = ({ title, body, onDismiss }) => {
+const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => void; onComplete?: () => void }> = ({ title, body, onDismiss, onComplete }) => {
     return (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-white animate-fade-in">
             <div className="animate-bounce mb-8">
@@ -40,12 +42,24 @@ const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => voi
             </div>
             <h2 className="text-3xl font-black mb-2 text-center">{title}</h2>
             <p className="text-gray-300 mb-12 text-center text-lg">{body}</p>
-            <button 
-                onClick={onDismiss}
-                className="w-full max-w-sm py-5 bg-white text-black font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform"
-            >
-                DISMISS ALARM
-            </button>
+            
+            <div className="w-full max-w-sm space-y-4">
+                {onComplete && (
+                    <button 
+                        onClick={onComplete}
+                        className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xl rounded-2xl shadow-[0_0_30px_rgba(16,185,129,0.3)] active:scale-95 transition-all flex items-center justify-center gap-3"
+                    >
+                        <CheckSquare size={24} strokeWidth={3} />
+                        I DID IT!
+                    </button>
+                )}
+                <button 
+                    onClick={onDismiss}
+                    className="w-full py-5 bg-white text-black font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform"
+                >
+                    STOP ALARM
+                </button>
+            </div>
         </div>
     );
 };
@@ -54,12 +68,24 @@ const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => voi
 // Now exposes an "Active Alarm" state to the parent
 const NotificationManager: React.FC<{ 
     onNotify: (title: string, msg: string) => void,
-    onAlarmStart: (title: string, msg: string) => void
+    onAlarmStart: (title: string, msg: string, habitId?: number) => void
     alarmDismissSignal: number // Incremented by parent to stop sound
 }> = ({ onNotify, onAlarmStart, alarmDismissSignal }) => {
   const { state } = useApp();
   const lastCheckedMinute = useRef<string>("");
   const activeOscillator = useRef<OscillatorNode | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+      return () => {
+          if (activeOscillator.current) {
+              try {
+                activeOscillator.current.stop();
+                activeOscillator.current.disconnect();
+              } catch(e) {}
+          }
+      };
+  }, []);
 
   // Effect to handle dismissal signal
   useEffect(() => {
@@ -73,6 +99,23 @@ const NotificationManager: React.FC<{
   }, [alarmDismissSignal]);
 
   const playSound = (type: 'alarm' | 'chime') => {
+    const soundEnabled = state.user.soundEnabled;
+    const vibrationEnabled = state.user.vibrationEnabled;
+
+    // Handle Vibration
+    if (vibrationEnabled && navigator.vibrate) {
+        if (type === 'alarm') {
+            // Intense vibration pattern for alarm
+            navigator.vibrate([500, 200, 500, 200, 1000]); 
+        } else {
+            // Gentle nudge for chime
+            navigator.vibrate([200]);
+        }
+    }
+
+    // Handle Sound
+    if (soundEnabled === false) return;
+
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContext) return;
@@ -134,6 +177,7 @@ const NotificationManager: React.FC<{
       let chimeTriggered = false;
       let notificationTitle = "";
       let notificationBody = "";
+      let alarmHabitId: number | undefined;
 
       state.habits.forEach(habit => {
         let shouldNotify = false;
@@ -144,6 +188,7 @@ const NotificationManager: React.FC<{
           isDailyAlarm = true;
           notificationTitle = `Time for ${habit.name}`;
           notificationBody = `It's ${habit.reminderTime}. Let's get it done.`;
+          alarmHabitId = habit.id;
         }
 
         if (!shouldNotify && habit.reminderInterval && habit.reminderInterval > 0) {
@@ -163,7 +208,7 @@ const NotificationManager: React.FC<{
             if (isDailyAlarm) {
                 alarmTriggered = true;
                 // For alarms, we want to show the overlay immediately
-                onAlarmStart(notificationTitle, notificationBody);
+                onAlarmStart(notificationTitle, notificationBody, alarmHabitId);
             } else {
                 chimeTriggered = true;
                 onNotify(notificationTitle, notificationBody);
@@ -181,7 +226,7 @@ const NotificationManager: React.FC<{
     const interval = setInterval(checkReminders, 5000); 
 
     return () => clearInterval(interval);
-  }, [state.habits, state.logs, onNotify, onAlarmStart]);
+  }, [state.habits, state.logs, onNotify, onAlarmStart, state.user.soundEnabled, state.user.vibrationEnabled]);
 
   const sendNotification = (title: string, body: string) => {
     if (!("Notification" in window)) return;
@@ -199,26 +244,52 @@ const NotificationManager: React.FC<{
 };
 
 const AppContent: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'home' | 'habits' | 'meals' | 'goals' | 'data'>('home');
-  const { fabOnClick } = useApp();
+  const [activeTab, setActiveTab] = useState<'home' | 'habits' | 'meals' | 'goals' | 'reports'>('home');
+  const { state, fabOnClick, toggleHabit } = useApp();
   const [toast, setToast] = useState<{title: string, msg: string} | null>(null);
   
   // Alarm Overlay State
-  const [activeAlarm, setActiveAlarm] = useState<{title: string, msg: string} | null>(null);
+  const [activeAlarm, setActiveAlarm] = useState<{title: string, msg: string, habitId?: number} | null>(null);
   const [dismissSignal, setDismissSignal] = useState(0);
+
+  // Settings Modal State (Global)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Dark Mode Effect
+  useEffect(() => {
+    if (state.user.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [state.user.theme]);
+
+  // Memoize handlers to prevent NotificationManager re-renders resetting the interval constantly
+  const handleNotify = useCallback((title: string, msg: string) => setToast({ title, msg }), []);
+  const handleAlarmStart = useCallback((title: string, msg: string, habitId?: number) => setActiveAlarm({ title, msg, habitId }), []);
 
   const handleDismissAlarm = () => {
       setActiveAlarm(null);
       setDismissSignal(prev => prev + 1); // Signal manager to stop sound
   };
 
+  const handleCompleteAlarm = () => {
+      if (activeAlarm?.habitId) {
+          toggleHabit(activeAlarm.habitId, getTodayStr());
+          setToast({ title: "Awesome!", msg: "Habit completed. Keep it up!" });
+      }
+      handleDismissAlarm();
+  };
+
+  const openSettings = () => setIsSettingsOpen(true);
+
   const renderTab = () => {
     switch(activeTab) {
-      case 'home': return <TabHome />;
-      case 'habits': return <TabHabits />;
-      case 'meals': return <TabMeals />;
-      case 'goals': return <TabGoals />;
-      case 'data': return <TabExport />;
+      case 'home': return <TabHome onOpenSettings={openSettings} />;
+      case 'habits': return <TabHabits onOpenSettings={openSettings} />;
+      case 'meals': return <TabMeals onOpenSettings={openSettings} />;
+      case 'goals': return <TabGoals onOpenSettings={openSettings} />;
+      case 'reports': return <TabReports onOpenSettings={openSettings} />;
     }
   };
 
@@ -226,7 +297,9 @@ const AppContent: React.FC = () => {
     <button 
       onClick={() => setActiveTab(id)}
       className={`flex flex-col items-center justify-center flex-1 h-full space-y-1 transition-colors ${
-        activeTab === id ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'
+        activeTab === id 
+          ? 'text-gray-900 dark:text-white' 
+          : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
       }`}
     >
       <Icon size={24} strokeWidth={activeTab === id ? 2.5 : 2} />
@@ -235,10 +308,10 @@ const AppContent: React.FC = () => {
   );
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-white shadow-2xl overflow-hidden relative flex flex-col">
+    <div className="max-w-md mx-auto min-h-screen bg-gray-50 dark:bg-gray-950 dark:text-gray-100 shadow-2xl overflow-hidden relative flex flex-col transition-colors duration-300">
       <NotificationManager 
-        onNotify={(title, msg) => setToast({ title, msg })} 
-        onAlarmStart={(title, msg) => setActiveAlarm({ title, msg })}
+        onNotify={handleNotify} 
+        onAlarmStart={handleAlarmStart}
         alarmDismissSignal={dismissSignal}
       />
       
@@ -247,9 +320,13 @@ const AppContent: React.FC = () => {
           <AlarmOverlay 
             title={activeAlarm.title} 
             body={activeAlarm.msg} 
-            onDismiss={handleDismissAlarm} 
+            onDismiss={handleDismissAlarm}
+            onComplete={activeAlarm.habitId ? handleCompleteAlarm : undefined}
           />
       )}
+
+      {/* Global Settings Modal */}
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       {/* Toast Notification */}
       {toast && (
@@ -271,19 +348,19 @@ const AppContent: React.FC = () => {
       {fabOnClick && (
         <button 
           onClick={fabOnClick}
-          className="absolute bottom-24 right-6 w-14 h-14 bg-gray-900 text-white rounded-full shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-40"
+          className="absolute bottom-24 right-6 w-14 h-14 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-40"
         >
           <Plus size={28} />
         </button>
       )}
 
       {/* Bottom Nav */}
-      <nav className="h-[80px] bg-white border-t border-gray-100 flex items-center justify-between px-2 pb-4 z-40 absolute bottom-0 w-full">
+      <nav className="h-[80px] bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between px-2 pb-4 z-40 absolute bottom-0 w-full transition-colors duration-300">
         <NavItem id="home" icon={Home} label="Home" />
         <NavItem id="habits" icon={CheckSquare} label="Habits" />
         <NavItem id="meals" icon={Utensils} label="Meals" />
         <NavItem id="goals" icon={Target} label="Goals" />
-        <NavItem id="data" icon={Database} label="Vault" />
+        <NavItem id="reports" icon={BarChart3} label="Reports" />
       </nav>
     </div>
   );
