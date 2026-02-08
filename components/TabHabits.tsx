@@ -355,20 +355,25 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
            <div>
              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1.5">Category</label>
              <div className="flex flex-wrap gap-2">
-               {state.categories.map(c => (
-                 <button 
-                  key={c.id}
-                  onClick={() => setCatId(c.id)}
-                  className={`px-3 py-2 rounded-xl border-2 font-bold text-xs uppercase transition-all ${
-                    catId === c.id 
-                      ? getColorClasses(c.color).replace('text-', 'text-').replace('bg-', 'bg-').replace('border-', 'border-').split(' ')[0]
-                      : 'border-gray-200 dark:border-gray-700 text-gray-400'
-                  }`}
-                  style={catId === c.id ? { borderColor: 'currentColor', color: 'inherit' } : {}}
-                 >
-                   {c.name}
-                 </button>
-               ))}
+               {state.categories.map(c => {
+                 const isSelected = catId === c.id;
+                 const activeClass = getColorClasses(c.color);
+
+                 return (
+                   <button 
+                    key={c.id}
+                    onClick={() => setCatId(c.id)}
+                    className={`px-3 py-2 rounded-xl border font-bold text-xs uppercase transition-all flex items-center gap-2 ${
+                      isSelected 
+                        ? activeClass
+                        : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:border-gray-300 dark:hover:border-gray-600 bg-white dark:bg-gray-800'
+                    }`}
+                   >
+                     <div className={`w-2 h-2 rounded-full bg-${c.color}-500 ${isSelected ? 'ring-2 ring-white dark:ring-gray-900' : ''}`}></div>
+                     {c.name}
+                   </button>
+                 );
+               })}
              </div>
            </div>
 

@@ -2,7 +2,8 @@
 import React, { useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Modal } from './Modal';
-import { Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, Smartphone, SmartphoneNfc } from 'lucide-react';
+import { Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, Smartphone, SmartphoneNfc, Music, Clock } from 'lucide-react';
+import { SoundType } from '../types';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -59,10 +60,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         }
     };
 
+    const soundTypes: {value: SoundType, label: string}[] = [
+        { value: 'modern', label: 'Modern (Soft)' },
+        { value: 'classic', label: 'Classic (Digital)' },
+        { value: 'retro', label: 'Retro (8-Bit)' }
+    ];
+
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Settings">
             <div className="space-y-6">
-                {/* Theme & Sound */}
+                {/* Theme & Preferences */}
                 <div className="space-y-4">
                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Preferences</h3>
                     
@@ -102,21 +109,84 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                             {state.user.vibrationEnabled ? 'On' : 'Off'}
                         </span>
                     </button>
+                </div>
 
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-start gap-3 border border-blue-100 dark:border-blue-800">
-                        <Bell size={20} className="text-blue-500 shrink-0 mt-0.5" />
-                        <div>
-                            <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300">Notifications</h4>
-                            <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                                System notifications are managed by your browser. Ensure permission is granted for reminders.
-                            </p>
-                            <button 
-                                onClick={() => Notification.requestPermission()}
-                                className="mt-2 text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-600 transition-colors"
-                            >
-                                Request Permission
-                            </button>
-                        </div>
+                {/* Audio Customization */}
+                <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                        <Music size={14} /> Sound & Alerts
+                     </h3>
+
+                     {/* Sound Type */}
+                     <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl space-y-2">
+                         <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Alert Sound Style</label>
+                         <div className="flex gap-2">
+                             {soundTypes.map((type) => (
+                                 <button
+                                    key={type.value}
+                                    onClick={() => updateUserConfig({ soundType: type.value })}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                                        state.user.soundType === type.value 
+                                        ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md' 
+                                        : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                    }`}
+                                 >
+                                     {type.label.split(' ')[0]}
+                                 </button>
+                             ))}
+                         </div>
+                     </div>
+
+                     {/* Durations */}
+                     <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl space-y-4">
+                         <div>
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase flex items-center gap-1">
+                                    <Clock size={12} /> Alarm Duration
+                                </label>
+                                <span className="text-xs font-bold text-gray-900 dark:text-white">{state.user.alarmDuration}s</span>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="5" max="60" step="5"
+                                value={state.user.alarmDuration}
+                                onChange={(e) => updateUserConfig({ alarmDuration: parseInt(e.target.value) })}
+                                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-gray-900 dark:accent-white"
+                            />
+                         </div>
+
+                         <div>
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase flex items-center gap-1">
+                                    <Bell size={12} /> Chime Duration
+                                </label>
+                                <span className="text-xs font-bold text-gray-900 dark:text-white">{state.user.chimeDuration}s</span>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="2" max="20" step="1"
+                                value={state.user.chimeDuration}
+                                onChange={(e) => updateUserConfig({ chimeDuration: parseInt(e.target.value) })}
+                                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-gray-900 dark:accent-white"
+                            />
+                         </div>
+                     </div>
+                </div>
+
+                {/* Permissions Info */}
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-start gap-3 border border-blue-100 dark:border-blue-800">
+                    <Bell size={20} className="text-blue-500 shrink-0 mt-0.5" />
+                    <div>
+                        <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300">System Notifications</h4>
+                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                            Notifications are managed by your browser. Ensure permission is granted.
+                        </p>
+                        <button 
+                            onClick={() => Notification.requestPermission()}
+                            className="mt-2 text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-600 transition-colors"
+                        >
+                            Request Permission
+                        </button>
                     </div>
                 </div>
 

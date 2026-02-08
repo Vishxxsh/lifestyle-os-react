@@ -87,6 +87,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (parsed.user.vibrationEnabled === undefined) parsed.user.vibrationEnabled = true;
         if (!parsed.user.proteinTarget) parsed.user.proteinTarget = 150;
 
+        // New Sound Config Migrations
+        if (parsed.user.alarmDuration === undefined) parsed.user.alarmDuration = 30;
+        if (parsed.user.chimeDuration === undefined) parsed.user.chimeDuration = 5;
+        if (!parsed.user.soundType) parsed.user.soundType = 'modern';
+
         setState(parsed);
       }
     } catch (e) {

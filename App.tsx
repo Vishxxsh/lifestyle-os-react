@@ -99,17 +99,21 @@ const NotificationManager: React.FC<{
   }, [alarmDismissSignal]);
 
   const playSound = (type: 'alarm' | 'chime') => {
-    const soundEnabled = state.user.soundEnabled;
-    const vibrationEnabled = state.user.vibrationEnabled;
+    const { soundEnabled, vibrationEnabled, alarmDuration, chimeDuration, soundType } = state.user;
 
-    // Handle Vibration
+    const duration = type === 'alarm' ? alarmDuration : chimeDuration;
+
+    // Handle Vibration using Navigator API
     if (vibrationEnabled && navigator.vibrate) {
         if (type === 'alarm') {
             // Intense vibration pattern for alarm
             navigator.vibrate([500, 200, 500, 200, 1000]); 
         } else {
-            // Gentle nudge for chime
-            navigator.vibrate([200]);
+            // Repeating pattern for chime duration
+            // Each "pulse" is 200ms + 300ms pause = 500ms.
+            const pulses = Math.max(1, Math.floor(duration / 0.5));
+            const pattern = Array(pulses).fill(0).flatMap(() => [200, 300]);
+            navigator.vibrate(pattern);
         }
     }
 
@@ -129,35 +133,139 @@ const NotificationManager: React.FC<{
       gain.connect(ctx.destination);
       
       if (type === 'alarm') {
-        // ALARM: Aggressive loop
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(880, now);
-        
-        const duration = 30; 
-        for(let i=0; i < duration; i++) {
-           gain.gain.setValueAtTime(0.2, now + i);
-           gain.gain.setValueAtTime(0, now + i + 0.5);
+        // ALARM
+        if (soundType === 'classic') {
+             // Classic Digital Alarm Clock (Square wave, harsh)
+             osc.type = 'square';
+             osc.frequency.setValueAtTime(880, now);
+             
+             // Beep-Beep-Beep pattern
+             for(let i=0; i < duration; i += 1) {
+                // Beep 1
+                gain.gain.setValueAtTime(0.2, now + i);
+                gain.gain.setValueAtTime(0, now + i + 0.1);
+                // Beep 2
+                gain.gain.setValueAtTime(0.2, now + i + 0.2);
+                gain.gain.setValueAtTime(0, now + i + 0.3);
+                // Beep 3
+                gain.gain.setValueAtTime(0.2, now + i + 0.4);
+                gain.gain.setValueAtTime(0, now + i + 0.5);
+             }
+        } else if (soundType === 'retro') {
+             // 8-Bit Arcade (Sawtooth, Arpeggio)
+             osc.type = 'sawtooth';
+             for(let i=0; i < duration; i+=0.5) {
+                 osc.frequency.setValueAtTime(440, now + i);
+                 osc.frequency.setValueAtTime(880, now + i + 0.1);
+                 osc.frequency.setValueAtTime(1320, now + i + 0.2);
+                 osc.frequency.setValueAtTime(880, now + i + 0.3);
+                 
+                 gain.gain.setValueAtTime(0.15, now + i);
+                 gain.gain.setValueAtTime(0.15, now + i + 0.4);
+                 gain.gain.linearRampToValueAtTime(0, now + i + 0.5);
+             }
+        } else {
+             // Modern (Triangle, softer pulses)
+             osc.type = 'triangle';
+             osc.frequency.setValueAtTime(880, now);
+             // Gentle pulsing
+             for(let i=0; i < duration; i+=1.5) {
+                 gain.gain.setValueAtTime(0, now + i);
+                 gain.gain.linearRampToValueAtTime(0.3, now + i + 0.1);
+                 gain.gain.linearRampToValueAtTime(0, now + i + 1.2);
+             }
         }
         
         osc.start(now);
         osc.stop(now + duration);
-        
-        // Save ref to stop it later
         activeOscillator.current = osc;
+
       } else {
-        // CHIME
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, now);
-        osc.frequency.exponentialRampToValueAtTime(440, now + 0.3);
-        
-        gain.gain.setValueAtTime(0.1, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-        
+        // INTERVAL CHIME
+        if (soundType === 'classic') {
+             // Simple Ding-Dong
+             osc.type = 'triangle';
+             for(let i=0; i < duration; i+=1.5) {
+                 // High
+                 osc.frequency.setValueAtTime(880, now + i);
+                 gain.gain.setValueAtTime(0.2, now + i);
+                 gain.gain.exponentialRampToValueAtTime(0.01, now + i + 0.4);
+                 
+                 // Low
+                 osc.frequency.setValueAtTime(660, now + i + 0.5);
+                 gain.gain.setValueAtTime(0.2, now + i + 0.5);
+                 gain.gain.exponentialRampToValueAtTime(0.01, now + i + 1.0);
+             }
+        } else if (soundType === 'retro') {
+             // Coin Sound
+             osc.type = 'square';
+             for(let i=0; i < duration; i+=1) {
+                 osc.frequency.setValueAtTime(900, now + i);
+                 osc.frequency.linearRampToValueAtTime(1400, now + i + 0.1);
+                 gain.gain.setValueAtTime(0.1, now + i);
+                 gain.gain.linearRampToValueAtTime(0, now + i + 0.15);
+             }
+        } else {
+             // Modern - Soft repeating pulse (Default logic from before)
+             osc.type = 'triangle';
+             for(let i=0; i < duration; i += 0.5) {
+                // Start beep
+                gain.gain.setValueAtTime(0.15, now + i);
+                // Fade out quickly
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i + 0.2);
+                // Tone
+                osc.frequency.setValueAtTime(880, now + i);
+             }
+        }
+
         osc.start(now);
-        osc.stop(now + 0.35);
+        osc.stop(now + duration);
       }
     } catch (e) {
       console.error("Audio play failed", e);
+    }
+  };
+
+  const sendNotification = async (title: string, body: string, isAlarm: boolean) => {
+    if (!("Notification" in window)) return;
+    
+    // Fallback if permission not granted
+    if (Notification.permission !== "granted") return;
+
+    // USE SERVICE WORKER FOR SYSTEM NOTIFICATIONS
+    // This allows notifications to show up in the status bar on Android/Mobile
+    // and persist even if the browser UI is hidden (backgrounded).
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            
+            // Standard options for "Native-like" feel
+            const options: any = {
+                body: body,
+                icon: '/icon.png', // Ensure this exists in public folder
+                badge: '/icon.png',
+                // Vibration for system notification
+                vibrate: isAlarm ? [500, 200, 500] : [200, 300, 200, 300, 200], 
+                tag: isAlarm ? 'lifestyle-alarm' : 'lifestyle-notification', // Tagging prevents stacking
+                renotify: true, // Play sound/vibrate again if tag is same
+                requireInteraction: isAlarm, // Keeps it on screen for alarms
+                data: {
+                    url: window.location.href // Used by sw.js to open window
+                }
+            };
+
+            registration.showNotification(title, options);
+            return;
+        } catch (e) {
+            console.error("SW Notification failed", e);
+        }
+    }
+
+    // Fallback to basic Notification API (Desktop usually)
+    try {
+      new Notification(title, { body, icon: '/icon.png' });
+    } catch (e) {
+      console.error("Notification failed", e);
     }
   };
 
@@ -213,7 +321,8 @@ const NotificationManager: React.FC<{
                 chimeTriggered = true;
                 onNotify(notificationTitle, notificationBody);
             }
-            sendNotification(notificationTitle, notificationBody);
+            // Trigger System Notification
+            sendNotification(notificationTitle, notificationBody, isDailyAlarm);
         }
       });
 
@@ -226,19 +335,7 @@ const NotificationManager: React.FC<{
     const interval = setInterval(checkReminders, 5000); 
 
     return () => clearInterval(interval);
-  }, [state.habits, state.logs, onNotify, onAlarmStart, state.user.soundEnabled, state.user.vibrationEnabled]);
-
-  const sendNotification = (title: string, body: string) => {
-    if (!("Notification" in window)) return;
-    
-    if (Notification.permission === "granted") {
-      try {
-        new Notification(title, { body, icon: '/icon.png' });
-      } catch (e) {
-        console.error("Notification failed", e);
-      }
-    }
-  };
+  }, [state.habits, state.logs, onNotify, onAlarmStart, state.user]);
 
   return null;
 };

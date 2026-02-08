@@ -48,6 +48,8 @@ export interface Goal {
   current: number;
 }
 
+export type SoundType = 'modern' | 'classic' | 'retro';
+
 export interface UserState {
   xp: number;
   level: number;
@@ -55,6 +57,10 @@ export interface UserState {
   theme: 'light' | 'dark';
   soundEnabled: boolean;
   vibrationEnabled: boolean;
+  // Sound Config
+  alarmDuration: number; // seconds
+  chimeDuration: number; // seconds
+  soundType: SoundType;
 }
 
 export interface FoodHistoryItem {
@@ -82,7 +88,17 @@ export interface AppState {
 }
 
 export const INITIAL_STATE: AppState = {
-  user: { xp: 0, level: 1, proteinTarget: 150, theme: 'light', soundEnabled: true, vibrationEnabled: true },
+  user: { 
+      xp: 0, 
+      level: 1, 
+      proteinTarget: 150, 
+      theme: 'light', 
+      soundEnabled: true, 
+      vibrationEnabled: true,
+      alarmDuration: 30,
+      chimeDuration: 5,
+      soundType: 'modern'
+  },
   categories: [
     { id: 'str', name: 'Strength', color: 'red' },
     { id: 'int', name: 'Intellect', color: 'blue' },
