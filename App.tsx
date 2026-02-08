@@ -70,7 +70,9 @@ const NotificationManager: React.FC<{
     onNotify: (title: string, msg: string) => void,
     onAlarmStart: (title: string, msg: string, habitId?: number) => void
     alarmDismissSignal: number // Incremented by parent to stop sound
-}> = ({ onNotify, onAlarmStart, alarmDismissSignal }) => {
+    onRemoteDismiss: () => void;
+    onRemoteComplete: (habitId: number) => void;
+}> = ({ onNotify, onAlarmStart, alarmDismissSignal, onRemoteDismiss, onRemoteComplete }) => {
   const { state } = useApp();
   const lastCheckedMinute = useRef<string>("");
   const activeOscillator = useRef<OscillatorNode | null>(null);
@@ -86,6 +88,34 @@ const NotificationManager: React.FC<{
           }
       };
   }, []);
+
+  // Listen for Service Worker Messages (Notification Clicks)
+  useEffect(() => {
+      const handleSWMessage = (event: MessageEvent) => {
+          if (!event.data) return;
+          
+          if (event.data.type === 'DISMISS_ALARM') {
+              console.log("Received remote dismiss");
+              onRemoteDismiss();
+          } 
+          else if (event.data.type === 'COMPLETE_HABIT') {
+              console.log("Received remote complete", event.data.habitId);
+              if (event.data.habitId) {
+                  onRemoteComplete(parseInt(event.data.habitId));
+              }
+          }
+      };
+
+      if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.addEventListener('message', handleSWMessage);
+      }
+
+      return () => {
+          if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+          }
+      };
+  }, [onRemoteDismiss, onRemoteComplete]);
 
   // Effect to handle dismissal signal
   useEffect(() => {
@@ -110,7 +140,6 @@ const NotificationManager: React.FC<{
             navigator.vibrate([500, 200, 500, 200, 1000]); 
         } else {
             // Repeating pattern for chime duration
-            // Each "pulse" is 200ms + 300ms pause = 500ms.
             const pulses = Math.max(1, Math.floor(duration / 0.5));
             const pattern = Array(pulses).fill(0).flatMap(() => [200, 300]);
             navigator.vibrate(pattern);
@@ -135,24 +164,17 @@ const NotificationManager: React.FC<{
       if (type === 'alarm') {
         // ALARM
         if (soundType === 'classic') {
-             // Classic Digital Alarm Clock (Square wave, harsh)
              osc.type = 'square';
              osc.frequency.setValueAtTime(880, now);
-             
-             // Beep-Beep-Beep pattern
              for(let i=0; i < duration; i += 1) {
-                // Beep 1
                 gain.gain.setValueAtTime(0.2, now + i);
                 gain.gain.setValueAtTime(0, now + i + 0.1);
-                // Beep 2
                 gain.gain.setValueAtTime(0.2, now + i + 0.2);
                 gain.gain.setValueAtTime(0, now + i + 0.3);
-                // Beep 3
                 gain.gain.setValueAtTime(0.2, now + i + 0.4);
                 gain.gain.setValueAtTime(0, now + i + 0.5);
              }
         } else if (soundType === 'retro') {
-             // 8-Bit Arcade (Sawtooth, Arpeggio)
              osc.type = 'sawtooth';
              for(let i=0; i < duration; i+=0.5) {
                  osc.frequency.setValueAtTime(440, now + i);
@@ -165,10 +187,8 @@ const NotificationManager: React.FC<{
                  gain.gain.linearRampToValueAtTime(0, now + i + 0.5);
              }
         } else {
-             // Modern (Triangle, softer pulses)
              osc.type = 'triangle';
              osc.frequency.setValueAtTime(880, now);
-             // Gentle pulsing
              for(let i=0; i < duration; i+=1.5) {
                  gain.gain.setValueAtTime(0, now + i);
                  gain.gain.linearRampToValueAtTime(0.3, now + i + 0.1);
@@ -183,21 +203,17 @@ const NotificationManager: React.FC<{
       } else {
         // INTERVAL CHIME
         if (soundType === 'classic') {
-             // Simple Ding-Dong
              osc.type = 'triangle';
              for(let i=0; i < duration; i+=1.5) {
-                 // High
                  osc.frequency.setValueAtTime(880, now + i);
                  gain.gain.setValueAtTime(0.2, now + i);
                  gain.gain.exponentialRampToValueAtTime(0.01, now + i + 0.4);
                  
-                 // Low
                  osc.frequency.setValueAtTime(660, now + i + 0.5);
                  gain.gain.setValueAtTime(0.2, now + i + 0.5);
                  gain.gain.exponentialRampToValueAtTime(0.01, now + i + 1.0);
              }
         } else if (soundType === 'retro') {
-             // Coin Sound
              osc.type = 'square';
              for(let i=0; i < duration; i+=1) {
                  osc.frequency.setValueAtTime(900, now + i);
@@ -206,14 +222,10 @@ const NotificationManager: React.FC<{
                  gain.gain.linearRampToValueAtTime(0, now + i + 0.15);
              }
         } else {
-             // Modern - Soft repeating pulse (Default logic from before)
              osc.type = 'triangle';
              for(let i=0; i < duration; i += 0.5) {
-                // Start beep
                 gain.gain.setValueAtTime(0.15, now + i);
-                // Fade out quickly
                 gain.gain.exponentialRampToValueAtTime(0.001, now + i + 0.2);
-                // Tone
                 osc.frequency.setValueAtTime(880, now + i);
              }
         }
@@ -226,32 +238,38 @@ const NotificationManager: React.FC<{
     }
   };
 
-  const sendNotification = async (title: string, body: string, isAlarm: boolean) => {
+  const sendNotification = async (title: string, body: string, isAlarm: boolean, habitId?: number) => {
     if (!("Notification" in window)) return;
     
     // Fallback if permission not granted
     if (Notification.permission !== "granted") return;
 
     // USE SERVICE WORKER FOR SYSTEM NOTIFICATIONS
-    // This allows notifications to show up in the status bar on Android/Mobile
-    // and persist even if the browser UI is hidden (backgrounded).
     if ('serviceWorker' in navigator) {
         try {
             const registration = await navigator.serviceWorker.ready;
             
-            // Standard options for "Native-like" feel
+            // Native-like options with Actions
             const options: any = {
                 body: body,
-                icon: '/icon.png', // Ensure this exists in public folder
+                icon: '/icon.png',
                 badge: '/icon.png',
-                // Vibration for system notification
                 vibrate: isAlarm ? [500, 200, 500] : [200, 300, 200, 300, 200], 
-                tag: isAlarm ? 'lifestyle-alarm' : 'lifestyle-notification', // Tagging prevents stacking
-                renotify: true, // Play sound/vibrate again if tag is same
-                requireInteraction: isAlarm, // Keeps it on screen for alarms
+                tag: isAlarm ? 'lifestyle-alarm' : 'lifestyle-notification', 
+                renotify: true, 
+                requireInteraction: isAlarm,
                 data: {
-                    url: window.location.href // Used by sw.js to open window
-                }
+                    url: window.location.href,
+                    habitId: habitId
+                },
+                actions: isAlarm 
+                    ? [
+                        { action: 'complete', title: 'Complete' },
+                        { action: 'dismiss', title: 'Stop' }
+                      ]
+                    : [
+                        { action: 'dismiss', title: 'Dismiss' }
+                      ]
             };
 
             registration.showNotification(title, options);
@@ -261,7 +279,7 @@ const NotificationManager: React.FC<{
         }
     }
 
-    // Fallback to basic Notification API (Desktop usually)
+    // Fallback to basic Notification API
     try {
       new Notification(title, { body, icon: '/icon.png' });
     } catch (e) {
@@ -308,6 +326,8 @@ const NotificationManager: React.FC<{
                 shouldNotify = true;
                 notificationTitle = `Reminder: ${habit.name}`;
                 notificationBody = `Keep the streak alive!`;
+                // For interval reminders, we can also link the habit ID for completion
+                alarmHabitId = habit.id; 
              }
            }
         }
@@ -315,14 +335,13 @@ const NotificationManager: React.FC<{
         if (shouldNotify) {
             if (isDailyAlarm) {
                 alarmTriggered = true;
-                // For alarms, we want to show the overlay immediately
                 onAlarmStart(notificationTitle, notificationBody, alarmHabitId);
             } else {
                 chimeTriggered = true;
                 onNotify(notificationTitle, notificationBody);
             }
-            // Trigger System Notification
-            sendNotification(notificationTitle, notificationBody, isDailyAlarm);
+            // Pass habitID to enable action buttons in notification
+            sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmHabitId);
         }
       });
 
@@ -361,22 +380,28 @@ const AppContent: React.FC = () => {
     }
   }, [state.user.theme]);
 
-  // Memoize handlers to prevent NotificationManager re-renders resetting the interval constantly
+  // Memoize handlers to prevent NotificationManager re-renders
   const handleNotify = useCallback((title: string, msg: string) => setToast({ title, msg }), []);
   const handleAlarmStart = useCallback((title: string, msg: string, habitId?: number) => setActiveAlarm({ title, msg, habitId }), []);
 
-  const handleDismissAlarm = () => {
+  const handleDismissAlarm = useCallback(() => {
       setActiveAlarm(null);
       setDismissSignal(prev => prev + 1); // Signal manager to stop sound
-  };
+  }, []);
 
-  const handleCompleteAlarm = () => {
+  const handleCompleteAlarm = useCallback(() => {
       if (activeAlarm?.habitId) {
           toggleHabit(activeAlarm.habitId, getTodayStr());
           setToast({ title: "Awesome!", msg: "Habit completed. Keep it up!" });
       }
       handleDismissAlarm();
-  };
+  }, [activeAlarm, toggleHabit, handleDismissAlarm]);
+
+  const handleRemoteComplete = useCallback((habitId: number) => {
+      toggleHabit(habitId, getTodayStr());
+      setToast({ title: "Awesome!", msg: "Marked done via notification." });
+      handleDismissAlarm();
+  }, [toggleHabit, handleDismissAlarm]);
 
   const openSettings = () => setIsSettingsOpen(true);
 
@@ -410,6 +435,8 @@ const AppContent: React.FC = () => {
         onNotify={handleNotify} 
         onAlarmStart={handleAlarmStart}
         alarmDismissSignal={dismissSignal}
+        onRemoteDismiss={handleDismissAlarm}
+        onRemoteComplete={handleRemoteComplete}
       />
       
       {/* Full Screen Alarm Overlay */}

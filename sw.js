@@ -47,14 +47,10 @@ self.addEventListener('fetch', (event) => {
 
         return fetch(fetchRequest).then(
           (response) => {
-            // Check if we received a valid response.
-            // We allow caching of opaque responses (type 'opaque') which happens with no-cors requests,
-            // and CORS responses (type 'cors') from CDNs like esm.sh.
             if (!response || response.status !== 200 || response.type === 'error') {
               return response;
             }
 
-            // Cache the dynamic asset (JS modules, icons, etc.)
             const responseToCache = response.clone();
 
             caches.open(CACHE_NAME)
@@ -66,34 +62,53 @@ self.addEventListener('fetch', (event) => {
           }
         ).catch((err) => {
             // Network failure (Offline)
-            // If it's a navigation request (page load), return index.html
             if (event.request.mode === 'navigate') {
                 return caches.match('./index.html');
             }
-            // Propagate error for other requests (e.g. API calls that can't be cached)
             throw err;
         });
       })
   );
 });
 
-// Handle Notification Clicks - Brings app to focus
+// Handle Notification Clicks
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // If a window is already open, focus it
-      for (var i = 0; i < clientList.length; i++) {
-        var client = clientList[i];
-        if (client.url && 'focus' in client) {
-          return client.focus();
+
+  // Handle Action Buttons (Dismiss / Complete)
+  if (event.action === 'dismiss') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+        clientList.forEach(client => {
+          client.postMessage({ type: 'DISMISS_ALARM' });
+        });
+      })
+    );
+  } else if (event.action === 'complete') {
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+        const habitId = event.notification.data.habitId;
+        clientList.forEach(client => {
+          client.postMessage({ type: 'COMPLETE_HABIT', habitId: habitId });
+        });
+      })
+    );
+  } else {
+    // Standard Click - Focus Window or Open
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+        // If a window is already open, focus it
+        for (var i = 0; i < clientList.length; i++) {
+          var client = clientList[i];
+          if (client.url && 'focus' in client) {
+            return client.focus();
+          }
         }
-      }
-      // Otherwise open a new window
-      if (clients.openWindow) {
-        return clients.openWindow('/');
-      }
-    })
-  );
+        // Otherwise open a new window
+        if (clients.openWindow) {
+          return clients.openWindow('/');
+        }
+      })
+    );
+  }
 });
