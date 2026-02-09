@@ -1,8 +1,8 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Modal } from './Modal';
-import { Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, Smartphone, SmartphoneNfc, Music, Clock, MoonStar } from 'lucide-react';
+import { Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, Smartphone, SmartphoneNfc, Music, Clock, MoonStar, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { SoundType } from '../types';
 
 interface SettingsModalProps {
@@ -11,9 +11,57 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-    const { state, updateUserConfig, resetData, importData } = useApp();
+    const { state, updateUserConfig, resetData, importData, recalculateXP } = useApp();
     const [importStatus, setImportStatus] = useState<string>("");
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
+
+    useEffect(() => {
+        if ('Notification' in window) {
+            setPermissionStatus(Notification.permission);
+        }
+    }, [isOpen]);
+
+    const requestPerms = async () => {
+        if (!('Notification' in window)) return;
+        const result = await Notification.requestPermission();
+        setPermissionStatus(result);
+    };
+
+    const sendTestNotification = async () => {
+        if (!('Notification' in window)) {
+            alert("This device does not support notifications.");
+            return;
+        }
+
+        if (Notification.permission !== 'granted') {
+             const perm = await Notification.requestPermission();
+             setPermissionStatus(perm);
+             if (perm !== 'granted') return;
+        }
+
+        const title = "Test Notification";
+        const body = "If you see this, your notifications are working perfectly!";
+        const icon = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
+
+        // Try Service Worker First
+        if ('serviceWorker' in navigator) {
+            try {
+                const reg = await navigator.serviceWorker.ready;
+                await reg.showNotification(title, {
+                    body,
+                    icon,
+                    vibrate: [200, 100, 200]
+                } as any);
+                return;
+            } catch (e) {
+                console.log("SW notification failed, trying fallback", e);
+            }
+        }
+        
+        // Fallback
+        new Notification(title, { body, icon });
+    };
 
     const toggleTheme = () => {
         updateUserConfig({ theme: state.user.theme === 'light' ? 'dark' : 'light' });
@@ -51,6 +99,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             }
         };
         reader.readAsText(file);
+    };
+
+    const handleRecalculate = () => {
+        if (confirm("Recalculate total XP based on current habit values?")) {
+            recalculateXP();
+            alert("XP Recalculated Successfully.");
+        }
     };
 
     const handleNuke = () => {
@@ -203,20 +258,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                      </div>
                 </div>
 
-                {/* Permissions Info */}
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-start gap-3 border border-blue-100 dark:border-blue-800">
-                    <Bell size={20} className="text-blue-500 shrink-0 mt-0.5" />
-                    <div>
-                        <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300">System Notifications</h4>
-                        <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                            Notifications are managed by your browser. Ensure permission is granted.
-                        </p>
-                        <button 
-                            onClick={() => Notification.requestPermission()}
-                            className="mt-2 text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-600 transition-colors"
-                        >
-                            Request Permission
-                        </button>
+                {/* Permissions Info & Test */}
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex flex-col gap-3 border border-blue-100 dark:border-blue-800">
+                    <div className="flex items-start gap-3">
+                        {permissionStatus === 'granted' 
+                            ? <CheckCircle2 size={20} className="text-emerald-500 shrink-0 mt-0.5" /> 
+                            : <AlertCircle size={20} className="text-blue-500 shrink-0 mt-0.5" />
+                        }
+                        <div className="flex-1">
+                            <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300">System Notifications</h4>
+                            <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                                Status: <span className="uppercase font-bold">{permissionStatus}</span>. 
+                                {permissionStatus !== 'granted' && " Enable this to receive reminders."}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                         {permissionStatus !== 'granted' && (
+                             <button 
+                                onClick={requestPerms}
+                                className="flex-1 text-xs bg-blue-500 text-white px-3 py-2 rounded-lg font-bold hover:bg-blue-600 transition-colors"
+                            >
+                                Grant Permission
+                            </button>
+                         )}
+                         <button 
+                             onClick={sendTestNotification}
+                             className="flex-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 rounded-lg font-bold border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                         >
+                             Test Notification
+                         </button>
                     </div>
                 </div>
 
@@ -224,6 +296,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Data Management</h3>
                     
+                    <button 
+                        onClick={handleRecalculate}
+                        className="w-full flex items-center justify-center gap-2 py-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold rounded-xl border border-orange-100 dark:border-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/40 active:scale-95 transition-transform"
+                    >
+                        <RefreshCw size={18} /> Recalculate XP
+                    </button>
+
                     <button 
                         onClick={handleExport}
                         className="w-full flex items-center justify-center gap-2 py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-xl active:scale-95 transition-transform"

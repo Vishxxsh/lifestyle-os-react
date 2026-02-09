@@ -47,6 +47,22 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
   const caloriesOut = todayWorkouts.reduce((acc, w) => acc + w.calories, 0);
   
   const netCalories = caloriesIn - caloriesOut;
+  const inTarget = state.user.caloriesInTarget || 2000;
+  const outTarget = state.user.caloriesOutTarget || 500;
+  const netTarget = inTarget - outTarget;
+
+  // Colors based on targets
+  let netColor = 'text-gray-900 dark:text-white';
+  if (netTarget < 0) {
+      // Negative Target (Weight Loss) -> Green if Actual is also Negative
+      netColor = netCalories <= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+  } else {
+      // Positive Target (Weight Gain) -> Green if Actual is also Positive
+      netColor = netCalories >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+  }
+
+  const inColor = caloriesIn <= inTarget ? 'text-gray-900 dark:text-white' : 'text-red-500';
+  const outColor = caloriesOut >= outTarget ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white';
 
   // Day Score for today (if exists)
   const currentDayScore = state.dayScores[todayStr];
@@ -187,17 +203,17 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
           <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm flex flex-col items-center text-center relative overflow-hidden">
               <div className="relative z-10 w-full">
                   <div className="text-sm text-gray-500 dark:text-gray-400 font-bold uppercase tracking-widest mb-2">Net Calories</div>
-                  <div className={`text-4xl font-black mb-4 ${netCalories > 0 ? 'text-gray-900 dark:text-white' : 'text-green-600 dark:text-green-400'}`}>
+                  <div className={`text-4xl font-black mb-4 ${netColor}`}>
                       {netCalories > 0 ? `+${netCalories}` : netCalories}
                   </div>
                   <div className="flex justify-center items-center gap-6 text-sm">
                       <div className="flex flex-col items-center">
-                          <span className="font-bold text-gray-900 dark:text-white">{caloriesIn}</span>
+                          <span className={`font-bold ${inColor}`}>{caloriesIn}</span>
                           <span className="text-xs text-gray-400 dark:text-gray-500 font-medium uppercase">Eaten</span>
                       </div>
                       <div className="w-px h-8 bg-gray-200 dark:bg-gray-700"></div>
                       <div className="flex flex-col items-center">
-                          <span className="font-bold text-gray-900 dark:text-white">{caloriesOut}</span>
+                          <span className={`font-bold ${outColor}`}>{caloriesOut}</span>
                           <span className="text-xs text-gray-400 dark:text-gray-500 font-medium uppercase">Burnt</span>
                       </div>
                   </div>

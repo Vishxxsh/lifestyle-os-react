@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateStreak, getTodayStr, getYesterdayStr } from '../utils';
-import { Settings, Bell, Zap, Trash2, Edit2, Lock, Menu, GripVertical, Check, Plus, Minus, X } from 'lucide-react';
+import { Settings, Bell, Zap, Trash2, Edit2, Lock, Menu, GripVertical, Check, Plus, Minus, X, Trophy } from 'lucide-react';
 import { Modal } from './Modal';
 import { HabitType, Habit, CategoryDef, FrequencyType } from '../types';
 
@@ -525,6 +525,23 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                       <span className="text-xs font-bold text-gray-400">times / period</span>
                    </div>
                </div>
+           </div>
+
+           {/* XP Reward Config */}
+           <div>
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1.5 flex items-center gap-1">
+                 <Trophy size={12} className="text-amber-500" /> XP Reward
+              </label>
+              <div className="flex items-center gap-3">
+                 <input 
+                    type="number" 
+                    className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 text-gray-900 dark:text-white" 
+                    value={xpReward} 
+                    onChange={e => setXpReward(e.target.value)} 
+                    placeholder="e.g. 10"
+                 />
+                 <span className="text-xs text-gray-400 font-medium">XP points per completion</span>
+              </div>
            </div>
 
             <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl space-y-3 border border-blue-100 dark:border-blue-800">

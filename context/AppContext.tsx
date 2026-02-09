@@ -38,6 +38,7 @@ interface AppContextType {
 
   // User Config
   updateUserConfig: (updates: Partial<UserState>) => void;
+  recalculateXP: () => void;
   
   resetData: () => void;
   importData: (jsonData: string) => boolean;
@@ -86,6 +87,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (parsed.user.soundEnabled === undefined) parsed.user.soundEnabled = true;
         if (parsed.user.vibrationEnabled === undefined) parsed.user.vibrationEnabled = true;
         if (!parsed.user.proteinTarget) parsed.user.proteinTarget = 150;
+
+        // Calorie Targets Migration
+        if (!parsed.user.caloriesInTarget) parsed.user.caloriesInTarget = 2000;
+        if (!parsed.user.caloriesOutTarget) parsed.user.caloriesOutTarget = 500;
+        if (!parsed.user.netCaloriesTarget) parsed.user.netCaloriesTarget = 1500;
 
         // New Sound Config Migrations
         if (parsed.user.alarmDuration === undefined) parsed.user.alarmDuration = 30;
@@ -288,6 +294,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
   };
 
+  const recalculateXP = () => {
+      setState(prev => {
+          let totalAccumulatedXP = 0;
+
+          // Iterate over all logs in history
+          Object.keys(prev.logs).forEach(date => {
+              const dayLogs = prev.logs[date];
+              Object.keys(dayLogs).forEach(habitIdStr => {
+                  const habitId = parseInt(habitIdStr);
+                  const val = dayLogs[habitId];
+                  const habit = prev.habits.find(h => h.id === habitId);
+
+                  if (habit) {
+                      const reward = habit.xpReward || (habit.type === 'checkbox' ? 10 : 1);
+                      
+                      if (habit.type === 'checkbox') {
+                          if (!!val) totalAccumulatedXP += reward;
+                      } else if (habit.type === 'numeric') {
+                          if (typeof val === 'number') totalAccumulatedXP += (val * reward);
+                      }
+                  }
+              });
+          });
+
+          // Rebuild Level System
+          // Progression Rule: Level 1->2 needs 100xp, 2->3 needs 200xp, etc.
+          // This matches the logic: while (xp >= level * 100)
+          let newLevel = 1;
+          let currentXP = totalAccumulatedXP;
+
+          while (currentXP >= newLevel * 100) {
+              currentXP -= newLevel * 100;
+              newLevel++;
+          }
+
+          return {
+              ...prev,
+              user: {
+                  ...prev.user,
+                  level: newLevel,
+                  xp: currentXP
+              }
+          };
+      });
+  };
+
   const setDayScore = (date: string, score: number) => {
       setState(prev => ({
           ...prev,
@@ -479,6 +531,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteGoal,
       updateVision,
       updateUserConfig,
+      recalculateXP,
       resetData,
       importData,
       fabOnClick,

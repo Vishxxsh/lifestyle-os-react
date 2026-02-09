@@ -2,11 +2,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { getTodayStr, formatDateDisplay } from '../utils';
-import { Plus, X, Flame, Menu, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { Plus, X, Flame, Menu, ChevronLeft, ChevronRight, Calendar, Target, Edit2 } from 'lucide-react';
 import { Modal } from './Modal';
 
 export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSettings }) => {
-  const { state, addMeal, deleteMeal, addWorkout, deleteWorkout } = useApp();
+  const { state, addMeal, deleteMeal, addWorkout, deleteWorkout, updateUserConfig } = useApp();
   
   // Date Navigation State
   const [viewDate, setViewDate] = useState(getTodayStr());
@@ -22,12 +22,23 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
   const [workoutName, setWorkoutName] = useState("");
   const [workoutCal, setWorkoutCal] = useState("");
 
+  // Target Modal State
+  const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+  const [tempInTarget, setTempInTarget] = useState("");
+  const [tempOutTarget, setTempOutTarget] = useState("");
+
   const meals = state.meals[viewDate] || [];
   const workouts = state.workouts?.[viewDate] || [];
   
   const totalCalIn = meals.reduce((acc, m) => acc + m.calories, 0);
   const totalPro = meals.reduce((acc, m) => acc + m.protein, 0);
   const totalCalOut = workouts.reduce((acc, w) => acc + w.calories, 0);
+  const netCalories = totalCalIn - totalCalOut;
+
+  // Targets
+  const inTarget = state.user.caloriesInTarget || 2000;
+  const outTarget = state.user.caloriesOutTarget || 500;
+  const netTarget = inTarget - outTarget;
 
   // Date handlers
   const handlePrevDay = () => {
@@ -68,6 +79,42 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
       setIsWorkoutModalOpen(false);
   };
 
+  const openTargetModal = () => {
+      setTempInTarget(inTarget.toString());
+      setTempOutTarget(outTarget.toString());
+      setIsTargetModalOpen(true);
+  };
+
+  const saveTargets = () => {
+      const i = parseInt(tempInTarget) || 2000;
+      const o = parseInt(tempOutTarget) || 500;
+      updateUserConfig({ 
+          caloriesInTarget: i,
+          caloriesOutTarget: o,
+          netCaloriesTarget: i - o // Automatically calculated
+      });
+      setIsTargetModalOpen(false);
+  };
+
+  // Color Logic
+  // In: Green if under target, Red if over
+  const inColor = totalCalIn <= inTarget ? 'bg-emerald-500' : 'bg-red-500';
+  // Out: Green if over target (hit goal), Orange/Gray if under (working on it)
+  const outColor = totalCalOut >= outTarget ? 'bg-emerald-500' : 'bg-orange-500';
+  
+  // Net Color Logic based on Sign Matching
+  let netColor = 'text-gray-900 dark:text-white';
+  if (netTarget < 0) {
+      // Weight Loss Goal (Negative Target) -> Actual should be Negative
+      netColor = netCalories <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+  } else {
+      // Weight Gain Goal (Positive Target) -> Actual should be Positive
+      netColor = netCalories >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+  }
+
+  // Calculated Net for Modal Display
+  const calcNetInModal = (parseInt(tempInTarget) || 0) - (parseInt(tempOutTarget) || 0);
+
   return (
     <div className="space-y-6 pb-24">
        <div className="border-b border-gray-200 dark:border-gray-800 pb-4 flex items-center justify-between">
@@ -77,6 +124,9 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
             </button>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Energy Tank</h1>
         </div>
+        <button onClick={openTargetModal} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-2">
+            <Target size={20} />
+        </button>
       </div>
 
       {/* Date Navigation */}
@@ -95,26 +145,37 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
 
       {/* Macro Dashboard */}
       <div className="flex gap-4 sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pt-2">
-        <div className="flex-1 bg-gray-900 dark:bg-gray-800 text-white p-4 rounded-2xl shadow-lg relative overflow-hidden">
+        <button 
+            onClick={openTargetModal}
+            className={`flex-1 ${inColor} text-white p-4 rounded-2xl shadow-lg relative overflow-hidden transition-colors text-left group`}
+        >
           <div className="relative z-10">
-            <span className="block text-3xl font-extrabold">{totalCalIn}</span>
-            <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Calories In</span>
+            <div className="flex items-end gap-1">
+                <span className="block text-3xl font-extrabold">{totalCalIn}</span>
+                <span className="text-xs font-medium opacity-80 mb-1.5">/ {inTarget}</span>
+            </div>
+            <span className="text-xs text-white/80 font-bold uppercase tracking-wider">Calories In</span>
           </div>
-          {/* Net indicator */}
-          <div className="absolute top-2 right-2 opacity-20">
+          <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-40 transition-opacity">
               <Plus size={40} />
           </div>
-        </div>
+        </button>
 
-        <div className="flex-1 bg-orange-500 dark:bg-orange-700 text-white p-4 rounded-2xl shadow-lg relative overflow-hidden">
+        <button 
+            onClick={openTargetModal}
+            className={`flex-1 ${outColor} text-white p-4 rounded-2xl shadow-lg relative overflow-hidden transition-colors text-left group`}
+        >
           <div className="relative z-10">
-            <span className="block text-3xl font-extrabold">{totalCalOut}</span>
-            <span className="text-xs text-orange-100 font-bold uppercase tracking-wider">Calories Out</span>
+            <div className="flex items-end gap-1">
+                <span className="block text-3xl font-extrabold">{totalCalOut}</span>
+                <span className="text-xs font-medium opacity-80 mb-1.5">/ {outTarget}</span>
+            </div>
+            <span className="text-xs text-white/80 font-bold uppercase tracking-wider">Calories Out</span>
           </div>
-          <div className="absolute top-2 right-2 opacity-20">
+          <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-40 transition-opacity">
               <Flame size={40} />
           </div>
-        </div>
+        </button>
       </div>
       
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white p-4 rounded-2xl shadow-sm flex justify-between items-center">
@@ -123,7 +184,12 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
            <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">Protein</span>
         </div>
         <div className="text-right">
-            <span className="block text-xl font-extrabold">{totalCalIn - totalCalOut}</span>
+            <div className="flex items-center justify-end gap-1">
+                <span className={`block text-xl font-extrabold ${netColor}`}>
+                    {netCalories > 0 ? '+' : ''}{netCalories}
+                </span>
+                <span className="text-xs text-gray-400 font-medium mt-1">/ {netTarget}</span>
+            </div>
             <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">Net Cals</span>
         </div>
       </div>
@@ -236,6 +302,50 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
           </div>
 
           <button onClick={handleSaveWorkout} className="w-full py-4 bg-orange-500 dark:bg-orange-600 text-white font-bold rounded-xl mt-4">Log Burn</button>
+        </div>
+      </Modal>
+
+      {/* Calorie Targets Modal */}
+      <Modal isOpen={isTargetModalOpen} onClose={() => setIsTargetModalOpen(false)} title="Calorie Targets">
+        <div className="space-y-5">
+            <div>
+                <label className="block text-xs font-bold text-emerald-500 uppercase mb-1">Daily Max Intake (Calories In)</label>
+                <input 
+                    type="number"
+                    className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-emerald-500 text-gray-900 dark:text-white" 
+                    value={tempInTarget} 
+                    onChange={e => setTempInTarget(e.target.value)} 
+                />
+            </div>
+            
+            <div>
+                <label className="block text-xs font-bold text-orange-500 uppercase mb-1">Daily Min Burn (Calories Out)</label>
+                <input 
+                    type="number"
+                    className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-white" 
+                    value={tempOutTarget} 
+                    onChange={e => setTempOutTarget(e.target.value)} 
+                />
+            </div>
+
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
+                <label className="block text-xs font-bold text-blue-500 uppercase mb-1">Calculated Net Target</label>
+                <div className="text-2xl font-black text-blue-900 dark:text-blue-300">
+                    {calcNetInModal > 0 ? '+' : ''}{calcNetInModal}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">
+                    {calcNetInModal < 0 
+                        ? "Deficit Goal: Stay negative (Green). Positive is Red." 
+                        : "Surplus Goal: Stay positive (Green). Negative is Red."}
+                </p>
+            </div>
+
+            <button 
+                onClick={saveTargets}
+                className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-xl shadow-lg mt-2"
+            >
+                Save Targets
+            </button>
         </div>
       </Modal>
     </div>

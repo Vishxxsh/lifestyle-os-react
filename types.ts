@@ -54,6 +54,12 @@ export interface UserState {
   xp: number;
   level: number;
   proteinTarget: number; // Daily protein target in grams
+  
+  // Calorie Targets
+  caloriesInTarget: number;
+  caloriesOutTarget: number;
+  netCaloriesTarget: number;
+
   theme: 'light' | 'dark';
   soundEnabled: boolean;
   vibrationEnabled: boolean;
@@ -94,7 +100,10 @@ export const INITIAL_STATE: AppState = {
   user: { 
       xp: 0, 
       level: 1, 
-      proteinTarget: 150, 
+      proteinTarget: 150,
+      caloriesInTarget: 2000,
+      caloriesOutTarget: 500,
+      netCaloriesTarget: 1500, 
       theme: 'light', 
       soundEnabled: true, 
       vibrationEnabled: true,
