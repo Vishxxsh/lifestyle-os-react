@@ -4,13 +4,13 @@ import { AppState, INITIAL_STATE, Habit, Todo, Meal, Workout, Goal, CategoryDef,
 
 interface AppContextType {
   state: AppState;
-  addHabit: (name: string, categoryId: string, type: HabitType, target: number | undefined, unit: string | undefined, frequency: FrequencyType, frequencyGoal: number, reminderTime?: string, reminderInterval?: number, xpReward?: number) => void;
+  addHabit: (name: string, categoryId: string, type: HabitType, target: number | undefined, unit: string | undefined, frequency: FrequencyType, frequencyGoal: number, reminderTime?: string, reminderInterval?: number, xpReward?: number, isCalorieBurner?: boolean) => void;
   updateHabit: (id: number, updates: Partial<Habit>) => void;
   deleteHabit: (id: number) => void;
   moveHabit: (activeId: number, overId: number) => void; 
-  toggleHabit: (id: number, date: string) => void;
+  toggleHabit: (id: number, date: string, manualCalories?: number) => void;
   incrementHabit: (id: number, date: string, amount: number) => void;
-  setHabitValue: (id: number, date: string, value: number | boolean) => void; 
+  setHabitValue: (id: number, date: string, value: number | boolean, manualCalories?: number) => void; 
   
   // Day Score
   setDayScore: (date: string, score: number) => void;
@@ -49,7 +49,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'lifestyleOS_v5'; 
+const STORAGE_KEY = 'lifestyleOS_v6'; 
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
@@ -75,7 +75,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 categoryId: h.categoryId || h.category,
                 frequency: h.frequency || 'daily',
                 frequencyGoal: h.frequencyGoal || 1,
-                unit: h.unit || (h.type === 'numeric' ? 'units' : undefined)
+                unit: h.unit || (h.type === 'numeric' ? 'units' : undefined),
+                isCalorieBurner: h.isCalorieBurner || false
             }));
         }
 
@@ -118,7 +119,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [state, loaded]);
 
-  const addHabit = (name: string, categoryId: string, type: HabitType, target?: number, unit?: string, frequency: FrequencyType = 'daily', frequencyGoal: number = 1, reminderTime?: string, reminderInterval?: number, xpReward: number = 10) => {
+  const addHabit = (name: string, categoryId: string, type: HabitType, target?: number, unit?: string, frequency: FrequencyType = 'daily', frequencyGoal: number = 1, reminderTime?: string, reminderInterval?: number, xpReward: number = 10, isCalorieBurner: boolean = false) => {
     setState(prev => ({
       ...prev,
       habits: [...prev.habits, { 
@@ -132,7 +133,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         frequencyGoal, 
         reminderTime, 
         reminderInterval, 
-        xpReward
+        xpReward,
+        isCalorieBurner
       }]
     }));
   };
@@ -166,7 +168,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const toggleHabit = (id: number, date: string) => {
+  const toggleHabit = (id: number, date: string, manualCalories?: number) => {
     setState(prev => {
       const habit = prev.habits.find(h => h.id === id);
       if (!habit) return prev;
@@ -193,15 +195,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
            xp = Math.max(0, xp - xpAmount);
       }
 
+      // --- Workout Logic ---
+      let newWorkouts = { ...prev.workouts };
+      if (habit.isCalorieBurner) {
+          const dayWorkouts = newWorkouts[date] || [];
+          if (newVal && manualCalories !== undefined && manualCalories > 0) {
+              // Remove old if exists (unlikely in toggle but safe)
+              const others = dayWorkouts.filter(w => w.linkedHabitId !== habit.id);
+              others.push({
+                  id: Date.now(),
+                  name: habit.name,
+                  calories: manualCalories,
+                  linkedHabitId: habit.id
+              });
+              newWorkouts[date] = others;
+          } else if (!newVal) {
+              // If unchecking, remove the workout log
+              newWorkouts[date] = dayWorkouts.filter(w => w.linkedHabitId !== habit.id);
+          }
+      }
+
       return {
         ...prev,
         logs: newLogs,
-        user: { ...prev.user, level, xp }
+        user: { ...prev.user, level, xp },
+        workouts: newWorkouts
       };
     });
   };
 
   const incrementHabit = (id: number, date: string, amount: number) => {
+    // Note: incrementHabit doesn't support manualCalories easily because it's a relative change. 
+    // Usually only used for Quick Add. If isCalorieBurner, user should use the Modal (setHabitValue) to enter total calories.
     setState(prev => {
       const habit = prev.habits.find(h => h.id === id);
       if (!habit) return prev;
@@ -218,7 +243,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let { xp, level } = prev.user;
       const xpPerUnit = habit.xpReward || 1; 
       
-      // Handle both positive and negative increments
       const xpChange = xpPerUnit * amount;
       
       if (xpChange > 0) {
@@ -228,7 +252,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             level++; 
           }
       } else {
-          // Prevent dropping below 0 for the current level (simple implementation)
           xp = Math.max(0, xp + xpChange);
       }
 
@@ -236,10 +259,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const setHabitValue = (id: number, date: string, value: number | boolean) => {
+  const setHabitValue = (id: number, date: string, value: number | boolean, manualCalories?: number) => {
       setState(prev => {
         const habit = prev.habits.find(h => h.id === id);
-        // If habit undefined, just update logs without XP calc
         if (!habit) {
              const dayLogs = prev.logs[date] || {};
              const newLogs = {
@@ -252,28 +274,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const dayLogs = prev.logs[date] || {};
         const oldValue = dayLogs[id];
         
-        // If value unchanged, do nothing to prevent unnecessary renders/calcs
-        if (oldValue === value) return prev;
-
-        // Calculate XP Change
+        // --- Calculate XP Change ---
+        // (Only if value changed, but we always process calorie updates if manualCalories passed)
         let xpChange = 0;
-        // Default rewards: 10 for checkbox, 1 per unit for numeric
-        const reward = habit.xpReward || (habit.type === 'checkbox' ? 10 : 1);
+        let shouldUpdateXP = oldValue !== value;
 
-        if (habit.type === 'checkbox') {
-            const oldBool = !!oldValue;
-            const newBool = !!value;
-            if (newBool !== oldBool) {
-                xpChange = newBool ? reward : -reward;
+        if (shouldUpdateXP) {
+            const reward = habit.xpReward || (habit.type === 'checkbox' ? 10 : 1);
+            if (habit.type === 'checkbox') {
+                const oldBool = !!oldValue;
+                const newBool = !!value;
+                if (newBool !== oldBool) {
+                    xpChange = newBool ? reward : -reward;
+                }
+            } else {
+                const oldNum = (typeof oldValue === 'number') ? oldValue : 0;
+                const newNum = (typeof value === 'number') ? value : 0;
+                xpChange = (newNum - oldNum) * reward;
             }
-        } else {
-            const oldNum = (typeof oldValue === 'number') ? oldValue : 0;
-            const newNum = (typeof value === 'number') ? value : 0;
-            xpChange = (newNum - oldNum) * reward;
         }
 
         let { xp, level } = prev.user;
-
         if (xpChange > 0) {
             xp += xpChange;
             while (xp >= level * 100) {
@@ -281,7 +302,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 level++;
             }
         } else if (xpChange < 0) {
-            // Cap at 0 to prevent de-leveling complexity
             xp = Math.max(0, xp + xpChange);
         }
 
@@ -290,7 +310,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             [date]: { ...dayLogs, [id]: value }
         };
 
-        return { ...prev, logs: newLogs, user: { ...prev.user, level, xp } };
+        // --- Workout Logic ---
+        let newWorkouts = { ...prev.workouts };
+        if (habit.isCalorieBurner) {
+            const dayWorkouts = newWorkouts[date] || [];
+            
+            // Is it active?
+            const isActive = habit.type === 'checkbox' ? !!value : (value as number) > 0;
+
+            if (isActive && manualCalories !== undefined) {
+                 // Add/Update Workout
+                 const others = dayWorkouts.filter(w => w.linkedHabitId !== habit.id);
+                 if (manualCalories > 0) {
+                    others.push({
+                        id: Date.now(),
+                        name: habit.name,
+                        calories: manualCalories,
+                        linkedHabitId: habit.id
+                    });
+                 }
+                 newWorkouts[date] = others;
+            } else if (!isActive) {
+                 // Remove Workout if cleared
+                 newWorkouts[date] = dayWorkouts.filter(w => w.linkedHabitId !== habit.id);
+            }
+        }
+
+        return { ...prev, logs: newLogs, user: { ...prev.user, level, xp }, workouts: newWorkouts };
       });
   };
 
@@ -318,9 +364,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               });
           });
 
-          // Rebuild Level System
-          // Progression Rule: Level 1->2 needs 100xp, 2->3 needs 200xp, etc.
-          // This matches the logic: while (xp >= level * 100)
           let newLevel = 1;
           let currentXP = totalAccumulatedXP;
 

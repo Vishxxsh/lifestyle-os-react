@@ -20,6 +20,9 @@ export interface Habit {
   reminderTime?: string; 
   reminderInterval?: number; 
   xpReward: number; 
+  
+  // Calorie Config
+  isCalorieBurner?: boolean;
 }
 
 export interface Todo {
@@ -39,6 +42,7 @@ export interface Workout {
   id: number;
   name: string;
   calories: number;
+  linkedHabitId?: number; // To track if this was created by a habit
 }
 
 export interface Goal {

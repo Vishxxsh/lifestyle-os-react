@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { getTodayStr, formatDateDisplay } from '../utils';
-import { Check, Trash2, Plus, Utensils, Edit2, Calendar, Smile, Menu, X } from 'lucide-react';
+import { Check, Trash2, Plus, Utensils, Edit2, Calendar, Smile, Menu, X, Flame } from 'lucide-react';
 import { Modal } from './Modal';
 
 interface TabHomeProps {
@@ -19,6 +19,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
   const [dayRating, setDayRating] = useState(5);
   // Temporary state for the batch log
   const [batchLogs, setBatchLogs] = useState<Record<number, number | boolean>>({});
+  const [batchCalories, setBatchCalories] = useState<Record<number, number>>({});
   
   // Temporary Meal Logging State within Modal
   const [tempMeals, setTempMeals] = useState<Array<{name: string, cal: number, pro: number}>>([]);
@@ -94,6 +95,16 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
       // Pre-fill batch logs with existing data for that day
       const existingLogs = state.logs[todayStr] || {};
       setBatchLogs({ ...existingLogs });
+
+      // Pre-fill existing calorie data
+      const existingCals: Record<number, number> = {};
+      const workouts = state.workouts[todayStr] || [];
+      workouts.forEach(w => {
+          if (w.linkedHabitId) {
+              existingCals[w.linkedHabitId] = w.calories;
+          }
+      });
+      setBatchCalories(existingCals);
       
       // Reset temp meals
       setTempMeals([]);
@@ -106,6 +117,10 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
 
   const handleBatchLogChange = (habitId: number, value: number | boolean) => {
       setBatchLogs(prev => ({ ...prev, [habitId]: value }));
+  };
+
+  const handleBatchCalorieChange = (habitId: number, calories: number) => {
+      setBatchCalories(prev => ({ ...prev, [habitId]: calories }));
   };
 
   const handleMealNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,7 +153,10 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
       
       // 2. Commit all habit logs
       Object.entries(batchLogs).forEach(([hId, val]) => {
-          setHabitValue(parseInt(hId), logDate, val);
+          const habitId = parseInt(hId);
+          // Only pass manualCalories if it's a calorie burner and has a value
+          const cals = batchCalories[habitId];
+          setHabitValue(habitId, logDate, val, cals);
       });
 
       // 3. Commit Meals
@@ -335,39 +353,62 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
               {/* Habits List */}
               <div className="space-y-2">
                   <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-widest mb-2">Habits Check</h3>
-                  <div className="max-h-[30vh] overflow-y-auto pr-2 space-y-2">
+                  <div className="max-h-[40vh] overflow-y-auto pr-2 space-y-3">
                       {/* Filter archived habits to keep list clean */}
                       {state.habits.map(h => {
                           const val = batchLogs[h.id];
+                          const isActive = h.type === 'checkbox' ? !!val : (val as number) > 0;
+
                           return (
-                              <div key={h.id} className="flex items-center justify-between p-3 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl">
-                                  <div className="flex items-center gap-3">
-                                      <div className={`w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600`}></div> 
-                                      <div>
-                                          <div className="text-sm font-bold text-gray-900 dark:text-white">{h.name}</div>
-                                          {h.type === 'numeric' && <div className="text-[10px] text-gray-400">Target: {h.target} {h.unit}</div>}
+                            <div key={h.id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl p-3">
+                                  <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                          <div className={`w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600`}></div> 
+                                          <div>
+                                              <div className="text-sm font-bold text-gray-900 dark:text-white">{h.name}</div>
+                                              <div className="flex items-center gap-2">
+                                                  {h.type === 'numeric' && <div className="text-[10px] text-gray-400">Target: {h.target} {h.unit}</div>}
+                                                  {h.isCalorieBurner && <div className="text-[10px] text-orange-500 font-bold flex items-center gap-1"><Flame size={8}/> Burns Cals</div>}
+                                              </div>
+                                          </div>
                                       </div>
+                                      
+                                      {h.type === 'checkbox' ? (
+                                          <button 
+                                            onClick={() => handleBatchLogChange(h.id, !val)}
+                                            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
+                                                val ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900' : 'bg-gray-100 dark:bg-gray-800 text-gray-300 dark:text-gray-600'
+                                            }`}
+                                          >
+                                              <Check size={20} strokeWidth={3} />
+                                          </button>
+                                      ) : (
+                                          <div className="flex items-center bg-gray-50 dark:bg-gray-800 rounded-lg p-1">
+                                              <input 
+                                                 type="number"
+                                                 className="w-16 h-8 bg-transparent text-center font-bold text-gray-900 dark:text-white outline-none"
+                                                 placeholder="0"
+                                                 value={typeof val === 'number' ? val : ''}
+                                                 onChange={(e) => handleBatchLogChange(h.id, parseInt(e.target.value) || 0)}
+                                              />
+                                              <span className="text-xs text-gray-400 mr-2">{h.unit}</span>
+                                          </div>
+                                      )}
                                   </div>
-                                  
-                                  {h.type === 'checkbox' ? (
-                                      <button 
-                                        onClick={() => handleBatchLogChange(h.id, !val)}
-                                        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${
-                                            val ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900' : 'bg-gray-100 dark:bg-gray-800 text-gray-300 dark:text-gray-600'
-                                        }`}
-                                      >
-                                          <Check size={20} strokeWidth={3} />
-                                      </button>
-                                  ) : (
-                                      <div className="flex items-center bg-gray-50 dark:bg-gray-800 rounded-lg p-1">
+
+                                  {/* Calorie Burner Input Field */}
+                                  {h.isCalorieBurner && isActive && (
+                                      <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between animate-fade-in">
+                                          <label className="text-[10px] font-bold text-orange-500 uppercase flex items-center gap-1">
+                                              <Flame size={10} fill="currentColor" /> Total Calories
+                                          </label>
                                           <input 
-                                             type="number"
-                                             className="w-16 h-8 bg-transparent text-center font-bold text-gray-900 dark:text-white outline-none"
-                                             placeholder="0"
-                                             value={typeof val === 'number' ? val : ''}
-                                             onChange={(e) => handleBatchLogChange(h.id, parseInt(e.target.value) || 0)}
+                                              type="number" 
+                                              className="w-20 p-1 bg-orange-50 dark:bg-orange-900/10 rounded text-center text-xs font-bold text-orange-900 dark:text-orange-200 outline-none focus:ring-1 focus:ring-orange-500"
+                                              placeholder="0"
+                                              value={batchCalories[h.id] || ''}
+                                              onChange={(e) => handleBatchCalorieChange(h.id, parseInt(e.target.value) || 0)}
                                           />
-                                          <span className="text-xs text-gray-400 mr-2">{h.unit}</span>
                                       </div>
                                   )}
                               </div>

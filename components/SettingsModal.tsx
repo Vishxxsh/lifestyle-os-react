@@ -37,30 +37,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         if (Notification.permission !== 'granted') {
              const perm = await Notification.requestPermission();
              setPermissionStatus(perm);
-             if (perm !== 'granted') return;
+             if (perm !== 'granted') {
+                 alert("Permission denied. Please enable notifications in your browser settings.");
+                 return;
+             }
         }
 
         const title = "Test Notification";
         const body = "If you see this, your notifications are working perfectly!";
         const icon = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
 
-        // Try Service Worker First
-        if ('serviceWorker' in navigator) {
-            try {
-                const reg = await navigator.serviceWorker.ready;
+        try {
+            // Try Service Worker First with a timeout
+            // If SW hangs (common in some states), we want to fail fast and try fallback or alert
+            if ('serviceWorker' in navigator) {
+                const swPromise = navigator.serviceWorker.ready;
+                const timeoutPromise = new Promise<never>((_, reject) => 
+                    setTimeout(() => reject(new Error("SW Ready Timeout")), 3000)
+                );
+
+                const reg = await Promise.race([swPromise, timeoutPromise]) as ServiceWorkerRegistration;
+                
                 await reg.showNotification(title, {
                     body,
                     icon,
                     vibrate: [200, 100, 200]
                 } as any);
                 return;
-            } catch (e) {
-                console.log("SW notification failed, trying fallback", e);
             }
+        } catch (e) {
+            console.warn("SW notification failed, trying fallback:", e);
         }
         
-        // Fallback
-        new Notification(title, { body, icon });
+        // Fallback to standard Notification API
+        try {
+            new Notification(title, { body, icon });
+        } catch (e) {
+            console.error("Standard notification failed", e);
+            alert("Notification failed. \n\n1. Check if 'Do Not Disturb' is on.\n2. Ensure battery saver is off for this browser.\n3. Reset site permissions.");
+        }
     };
 
     const toggleTheme = () => {

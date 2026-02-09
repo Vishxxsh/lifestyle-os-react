@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateStreak, getTodayStr, getYesterdayStr } from '../utils';
-import { Settings, Bell, Zap, Trash2, Edit2, Lock, Menu, GripVertical, Check, Plus, Minus, X, Trophy } from 'lucide-react';
+import { Settings, Bell, Zap, Trash2, Edit2, Lock, Menu, GripVertical, Check, Plus, Minus, X, Trophy, Flame } from 'lucide-react';
 import { Modal } from './Modal';
 import { HabitType, Habit, CategoryDef, FrequencyType } from '../types';
 
@@ -17,8 +17,8 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
   const [isManageCatsOpen, setIsManageCatsOpen] = useState(false);
   
-  // Quantity Input Modal State
-  const [quantityModalData, setQuantityModalData] = useState<{
+  // Log Entry Modal (Replaces old Quantity Modal)
+  const [logModalData, setLogModalData] = useState<{
       isOpen: boolean;
       habitId: number | null;
       date: string;
@@ -26,8 +26,16 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
       currentValue: number;
       target: number;
       unit: string;
-  }>({ isOpen: false, habitId: null, date: "", habitName: "", currentValue: 0, target: 0, unit: "" });
-  const [qtyInputValue, setQtyInputValue] = useState("");
+      type: HabitType;
+      isCalorieBurner: boolean;
+      currentCalories: number;
+  }>({ 
+      isOpen: false, habitId: null, date: "", habitName: "", currentValue: 0, target: 0, unit: "", 
+      type: 'checkbox', isCalorieBurner: false, currentCalories: 0 
+  });
+  
+  const [logInputValue, setLogInputValue] = useState("");
+  const [logCaloriesValue, setLogCaloriesValue] = useState("");
 
   // DnD State
   const [draggedHabitId, setDraggedHabitId] = useState<number | null>(null);
@@ -44,6 +52,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
   const [xpReward, setXpReward] = useState("10");
   const [reminderTime, setReminderTime] = useState("");
   const [reminderInterval, setReminderInterval] = useState("");
+  const [isCalorieBurner, setIsCalorieBurner] = useState(false);
 
   // Category Form State
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
@@ -73,7 +82,6 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
       return dateStr === getTodayStr();
   };
 
-  // Logic: Can only log for Today and Yesterday
   const isLoggable = (dateStr: string) => {
       const today = getTodayStr();
       const yesterday = getYesterdayStr();
@@ -94,6 +102,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
       setXpReward(habit.xpReward?.toString() || "10");
       setReminderTime(habit.reminderTime || "");
       setReminderInterval(habit.reminderInterval?.toString() || "");
+      setIsCalorieBurner(habit.isCalorieBurner || false);
     } else {
       setEditingId(null);
       setName("");
@@ -106,6 +115,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
       setXpReward("10");
       setReminderTime("");
       setReminderInterval("");
+      setIsCalorieBurner(false);
     }
     setIsHabitModalOpen(true);
   }, [state.categories]);
@@ -134,11 +144,12 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
         frequency, frequencyGoal: parseInt(frequencyGoal) || 1,
         reminderTime: reminderTime || undefined,
         reminderInterval: reminderInterval ? parseInt(reminderInterval) : undefined,
-        xpReward: parseInt(xpReward) || 10
+        xpReward: parseInt(xpReward) || 10,
+        isCalorieBurner
     };
 
     if (editingId !== null) updateHabit(editingId, habitData);
-    else addHabit(habitData.name, habitData.categoryId, habitData.type, habitData.target, habitData.unit, habitData.frequency, habitData.frequencyGoal, habitData.reminderTime, habitData.reminderInterval, habitData.xpReward);
+    else addHabit(habitData.name, habitData.categoryId, habitData.type, habitData.target, habitData.unit, habitData.frequency, habitData.frequencyGoal, habitData.reminderTime, habitData.reminderInterval, habitData.xpReward, habitData.isCalorieBurner);
     setIsHabitModalOpen(false);
   };
 
@@ -153,32 +164,66 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
   const handleDotClick = (h: Habit, date: string) => {
       if (!isLoggable(date)) return; // Locked
 
-      // If Numeric, Open Modal
-      if (h.type === 'numeric') {
-          const val = state.logs[date]?.[h.id];
-          const current = typeof val === 'number' ? val : 0;
+      const val = state.logs[date]?.[h.id];
+      const isDone = h.type === 'checkbox' ? !!val : (val as number) > 0;
+
+      // Logic:
+      // If Numeric -> Always Open Modal
+      // If Checkbox & CalorieBurner & NOT Done -> Open Modal to ask for calories
+      // If Checkbox & CalorieBurner & Done -> Open Modal to allow edit (or toggle off)
+      // If Checkbox & Normal -> Toggle immediately
+
+      if (h.type === 'numeric' || h.isCalorieBurner) {
+          const current = typeof val === 'number' ? val : (val ? 1 : 0);
           
-          setQuantityModalData({
+          // Get existing calories if any
+          const workout = state.workouts[date]?.find(w => w.linkedHabitId === h.id);
+          const cals = workout ? workout.calories : 0;
+
+          setLogModalData({
               isOpen: true,
               habitId: h.id,
               date: date,
               habitName: h.name,
               currentValue: current,
               target: h.target || 1,
-              unit: h.unit || 'units'
+              unit: h.unit || 'units',
+              type: h.type,
+              isCalorieBurner: h.isCalorieBurner || false,
+              currentCalories: cals
           });
-          setQtyInputValue(current.toString());
+          setLogInputValue(current.toString());
+          setLogCaloriesValue(cals > 0 ? cals.toString() : "");
       } else {
-          // If Checkbox, Toggle
           toggleHabit(h.id, date);
       }
   };
 
-  const saveQuantity = () => {
-      if (quantityModalData.habitId) {
-          const val = parseInt(qtyInputValue) || 0;
-          setHabitValue(quantityModalData.habitId, quantityModalData.date, val);
-          setQuantityModalData(prev => ({ ...prev, isOpen: false }));
+  const saveLogEntry = () => {
+      if (logModalData.habitId) {
+          let val: number | boolean = 0;
+          
+          if (logModalData.type === 'numeric') {
+              val = parseInt(logInputValue) || 0;
+          } else {
+              // Checkbox: If user saves from modal, assume they want it 'Done' unless they cleared it?
+              // Actually for checkbox, this modal usually implies setting it to True.
+              // We'll treat >0 calories or just clicking save as "Done".
+              // But if it's a calorie burner, the calorie input is key.
+              val = true; 
+          }
+
+          const cals = parseInt(logCaloriesValue) || 0;
+          
+          setHabitValue(logModalData.habitId, logModalData.date, val, cals);
+          setLogModalData(prev => ({ ...prev, isOpen: false }));
+      }
+  };
+
+  const toggleOffFromModal = () => {
+      if (logModalData.habitId) {
+          setHabitValue(logModalData.habitId, logModalData.date, false, 0); // Clear it
+          setLogModalData(prev => ({ ...prev, isOpen: false }));
       }
   };
 
@@ -238,7 +283,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
       {/* MATRIX HEADER (Sticky Dates) */}
       <div className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-950/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 px-4 py-2 shadow-sm">
           <div className="flex items-center">
-              <div className="flex-1"></div> {/* Spacer for Name column on wider screens, or just hidden logic */}
+              <div className="flex-1"></div>
               <div className="w-full grid grid-cols-7 gap-1">
                   {last7Days.map((date, i) => {
                       const active = isToday(date);
@@ -270,7 +315,6 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                          {habits.map(h => {
                              const streak = calculateStreak(h.id, state);
                              const colorClass = getColorClasses(cat.color);
-                             // Extract base color name for dynamic classes
                              const colorParts = colorClass.split(' ');
                              const baseTextClass = colorParts.find(c => c.startsWith('text-') && !c.includes(':')) || 'text-blue-500';
                              const baseColorName = baseTextClass.replace('text-', '').replace('-500', '');
@@ -285,9 +329,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                                     onDrop={(e) => handleDrop(e, h)}
                                     className={`relative bg-white dark:bg-gray-900 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-800 transition-all ${draggedHabitId === h.id ? 'opacity-40 border-dashed border-2' : ''}`}
                                  >
-                                     {/* COMPACT LUXE HEADER */}
                                      <div className="flex justify-between items-start mb-3">
-                                         {/* Left: Name & Controls */}
                                          <div className="flex items-center gap-2 overflow-hidden flex-1 mr-2">
                                              <div className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 dark:text-gray-700 shrink-0">
                                                 <GripVertical size={14} />
@@ -300,7 +342,6 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                                              </button>
                                          </div>
 
-                                         {/* Right: Stats Stack */}
                                          <div className="flex flex-col items-end shrink-0">
                                              <div className="text-xs font-bold text-amber-500 flex items-center gap-1">
                                                  <Zap size={10} fill="currentColor" /> {streak} Streak
@@ -311,11 +352,11 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                                                     <span>{h.frequency === 'daily' ? 'Daily' : `${h.frequencyGoal}x/${h.frequency.substr(0,1).toUpperCase()}`}</span>
                                                   }
                                                   {(h.reminderTime || h.reminderInterval) && <Bell size={8} className="text-blue-400 ml-1" fill="currentColor" />}
+                                                  {h.isCalorieBurner && <Flame size={8} className="text-orange-500 ml-1" fill="currentColor" />}
                                              </div>
                                          </div>
                                      </div>
 
-                                     {/* Matrix Row (Dots) */}
                                      <div className="w-full grid grid-cols-7 gap-1">
                                          {last7Days.map((date) => {
                                              const val = state.logs[date]?.[h.id];
@@ -351,12 +392,10 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                                                          <span className="text-[10px] font-bold">{numVal}</span>
                                                      )}
                                                      
-                                                     {/* Locked Indicator for old days if empty */}
                                                      {!canLog && !isCompleted && !isPartial && (
                                                          <Lock size={10} className="text-gray-300 dark:text-gray-700" />
                                                      )}
 
-                                                     {/* Ghost Tick for Loggable days */}
                                                      {canLog && !isCompleted && !isPartial && (
                                                          <div className="opacity-0 group-hover:opacity-30 absolute inset-0 flex items-center justify-center text-gray-400">
                                                              <div className="w-2 h-2 rounded-full bg-gray-400"></div>
@@ -373,77 +412,106 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                 </div>
             );
         })}
-
-        {state.habits.length === 0 && (
-            <div className="text-center py-10">
-                <p className="text-gray-400 text-sm mb-4">No habits defined yet.</p>
-                <button onClick={() => handleOpenHabitModal()} className="px-6 py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-xl shadow-lg">
-                    Create First Habit
-                </button>
-            </div>
-        )}
       </div>
 
-      {/* --- QUANTITY INPUT MODAL --- */}
-      <Modal isOpen={quantityModalData.isOpen} onClose={() => setQuantityModalData(prev => ({ ...prev, isOpen: false }))} title={`Log ${quantityModalData.habitName}`}>
+      {/* --- LOG ENTRY MODAL (Unified) --- */}
+      <Modal isOpen={logModalData.isOpen} onClose={() => setLogModalData(prev => ({ ...prev, isOpen: false }))} title={`Log ${logModalData.habitName}`}>
           <div className="space-y-6 pt-2">
+               {/* Display for Date */}
                <div className="flex flex-col items-center justify-center">
-                   <div className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider">{new Date(quantityModalData.date).toLocaleDateString()}</div>
-                   <div className="text-6xl font-black text-gray-900 dark:text-white mb-2 tracking-tighter">
-                       {qtyInputValue || '0'}
+                   <div className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider">{new Date(logModalData.date).toLocaleDateString()}</div>
+                   
+                   {/* If Numeric, show counter. If Checkbox, show status */}
+                   {logModalData.type === 'numeric' ? (
+                       <>
+                           <div className="text-6xl font-black text-gray-900 dark:text-white mb-2 tracking-tighter">
+                               {logInputValue || '0'}
+                           </div>
+                           <div className="text-sm font-bold text-gray-400 uppercase tracking-widest">
+                               {logModalData.unit} 
+                               <span className="text-gray-300 dark:text-gray-600 mx-2">/</span> 
+                               Target: {logModalData.target}
+                           </div>
+                       </>
+                   ) : (
+                       <div className="text-xl font-bold text-emerald-500 uppercase tracking-widest mb-4">
+                           {logModalData.isCalorieBurner ? 'Mark Activity' : 'Mark Complete'}
+                       </div>
+                   )}
+               </div>
+
+               {/* Numeric Helpers */}
+               {logModalData.type === 'numeric' && (
+                   <>
+                       <div className="flex justify-center gap-4">
+                            <button onClick={() => setLogInputValue(prev => Math.max(0, (parseInt(prev)||0) - 1).toString())} className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                                <Minus size={24} />
+                            </button>
+                            <button onClick={() => setLogInputValue(prev => ((parseInt(prev)||0) + 1).toString())} className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                                <Plus size={24} />
+                            </button>
+                       </div>
+                       
+                       <div className="grid grid-cols-4 gap-2">
+                           {[
+                               Math.ceil(logModalData.target * 0.25), 
+                               Math.ceil(logModalData.target * 0.5), 
+                               logModalData.target,
+                               logModalData.target + Math.ceil(logModalData.target * 0.5)
+                            ].filter((v, i, a) => a.indexOf(v) === i && v > 0).map((num, i) => (
+                               <button 
+                                 key={i} 
+                                 onClick={() => setLogInputValue(num.toString())}
+                                 className="py-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"
+                               >
+                                   {num}
+                               </button>
+                           ))}
+                       </div>
+
+                       <input 
+                         type="number" 
+                         value={logInputValue}
+                         onChange={(e) => setLogInputValue(e.target.value)}
+                         className="w-full p-4 bg-gray-50 dark:bg-gray-800 rounded-xl text-center font-bold text-lg outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-white text-gray-900 dark:text-white"
+                         placeholder="Custom Amount"
+                       />
+                   </>
+               )}
+
+               {/* Calorie Burner Input */}
+               {logModalData.isCalorieBurner && (
+                   <div className="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-100 dark:border-orange-900/30 space-y-2">
+                       <label className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase flex items-center gap-1">
+                           <Flame size={12} fill="currentColor" /> Calories Burnt (Total)
+                       </label>
+                       <input 
+                           type="number" 
+                           value={logCaloriesValue}
+                           onChange={(e) => setLogCaloriesValue(e.target.value)}
+                           className="w-full p-3 bg-white dark:bg-gray-800 rounded-lg text-center font-bold text-orange-900 dark:text-orange-200 outline-none focus:ring-2 focus:ring-orange-500"
+                           placeholder="0"
+                       />
                    </div>
-                   <div className="text-sm font-bold text-gray-400 uppercase tracking-widest">
-                       {quantityModalData.unit} 
-                       <span className="text-gray-300 dark:text-gray-600 mx-2">/</span> 
-                       Target: {quantityModalData.target}
-                   </div>
-               </div>
+               )}
 
-               {/* Quick Add Buttons */}
-               <div className="flex justify-center gap-4">
-                    <button onClick={() => setQtyInputValue(prev => Math.max(0, (parseInt(prev)||0) - 1).toString())} className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                        <Minus size={24} />
-                    </button>
-                    <button onClick={() => setQtyInputValue(prev => ((parseInt(prev)||0) + 1).toString())} className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                        <Plus size={24} />
-                    </button>
+               <div className="flex gap-3">
+                   {/* Only show "Clear/Uncheck" if it has value */}
+                   {(logModalData.currentValue > 0 || (logModalData.type === 'checkbox' && !!state.logs[logModalData.date]?.[logModalData.habitId!])) && (
+                        <button 
+                            onClick={toggleOffFromModal}
+                            className="flex-1 py-4 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-bold rounded-xl active:scale-95 transition-transform"
+                        >
+                            Reset
+                        </button>
+                   )}
+                   <button 
+                      onClick={saveLogEntry}
+                      className="flex-[2] py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+                   >
+                       <Check size={20} /> Save Entry
+                   </button>
                </div>
-               
-               {/* Shortcuts */}
-               <div className="grid grid-cols-4 gap-2">
-                   {[
-                       Math.ceil(quantityModalData.target * 0.25), 
-                       Math.ceil(quantityModalData.target * 0.5), 
-                       quantityModalData.target,
-                       quantityModalData.target + Math.ceil(quantityModalData.target * 0.5)
-                    ].filter((v, i, a) => a.indexOf(v) === i && v > 0).map((num, i) => (
-                       <button 
-                         key={i} 
-                         onClick={() => setQtyInputValue(num.toString())}
-                         className="py-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs font-bold text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"
-                       >
-                           {num}
-                       </button>
-                   ))}
-               </div>
-
-               <div className="relative">
-                   <input 
-                     type="number" 
-                     value={qtyInputValue}
-                     onChange={(e) => setQtyInputValue(e.target.value)}
-                     className="w-full p-4 bg-gray-50 dark:bg-gray-800 rounded-xl text-center font-bold text-lg outline-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-white text-gray-900 dark:text-white"
-                     placeholder="Custom Amount"
-                     autoFocus
-                   />
-               </div>
-
-               <button 
-                  onClick={saveQuantity}
-                  className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
-               >
-                   <Check size={20} /> Save Entry
-               </button>
           </div>
       </Modal>
 
@@ -525,6 +593,25 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                       <span className="text-xs font-bold text-gray-400">times / period</span>
                    </div>
                </div>
+           </div>
+
+           {/* Calorie Burner Toggle */}
+           <div className="bg-orange-50 dark:bg-orange-900/10 p-4 rounded-xl flex items-center justify-between border border-orange-100 dark:border-orange-900/30">
+               <div>
+                   <h4 className="text-xs font-bold text-orange-900 dark:text-orange-300 uppercase flex items-center gap-2">
+                       <Flame size={12} fill="currentColor" /> Calorie Burner
+                   </h4>
+                   <p className="text-[10px] text-orange-700 dark:text-orange-400 mt-1">
+                       Enable to manually log calories when completed.
+                   </p>
+               </div>
+               <button 
+                    type="button"
+                    onClick={() => setIsCalorieBurner(!isCalorieBurner)}
+                    className={`w-10 h-6 rounded-full transition-colors relative ${isCalorieBurner ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+               >
+                   <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${isCalorieBurner ? 'translate-x-4' : ''}`}></div>
+               </button>
            </div>
 
            {/* XP Reward Config */}

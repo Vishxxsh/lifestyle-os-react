@@ -56,8 +56,14 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('SW registered'))
+          navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
+            .then(reg => {
+                console.log('SW registered', reg);
+                // Ensure controller is active
+                if (!navigator.serviceWorker.controller) {
+                    // Force update if needed? 
+                }
+            })
             .catch(err => console.log('SW failed', err));
         });
       }

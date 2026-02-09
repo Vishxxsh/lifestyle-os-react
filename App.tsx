@@ -233,7 +233,13 @@ const NotificationManager: React.FC<{
     // Try Service Worker first (Required for Android Background)
     if ('serviceWorker' in navigator) {
         try {
-            const registration = await navigator.serviceWorker.ready;
+            // Race condition check: If SW is not ready within 2s, assume broken state and fallback
+            const swPromise = navigator.serviceWorker.ready;
+            const timeoutPromise = new Promise<never>((_, reject) => 
+                setTimeout(() => reject(new Error("SW Ready Timeout")), 2000)
+            );
+            
+            const registration = await Promise.race([swPromise, timeoutPromise]) as ServiceWorkerRegistration;
             const options: any = {
                 body: body,
                 icon: iconUrl,
@@ -260,12 +266,16 @@ const NotificationManager: React.FC<{
             await registration.showNotification(title, options);
             return; // Success via SW
         } catch (e) {
-            console.error("SW Notification failed", e);
+            console.warn("SW Notification failed, using fallback logic", e);
         }
     }
     
-    // Fallback to Main Thread (Unreliable on Android Background)
-    new Notification(title, { body, icon: iconUrl });
+    // Fallback to Main Thread (Unreliable on Android Background, but better than nothing)
+    try {
+        new Notification(title, { body, icon: iconUrl });
+    } catch (e) {
+        console.error("Fallback notification failed", e);
+    }
   };
 
   // Helper: Check if DND is active
