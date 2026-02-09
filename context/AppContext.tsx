@@ -92,6 +92,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (parsed.user.chimeDuration === undefined) parsed.user.chimeDuration = 5;
         if (!parsed.user.soundType) parsed.user.soundType = 'modern';
 
+        // DND Migration
+        if (!parsed.user.dndStartTime) parsed.user.dndStartTime = "23:00";
+        if (!parsed.user.dndEndTime) parsed.user.dndEndTime = "07:00";
+
         setState(parsed);
       }
     } catch (e) {

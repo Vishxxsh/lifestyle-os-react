@@ -1,16 +1,23 @@
 
-const CACHE_NAME = 'lifestyle-os-v5';
-const URLS_TO_CACHE = [
+const CACHE_NAME = 'lifestyle-os-v6-offline';
+
+// Core assets to pre-cache immediately
+const PRECACHE_URLS = [
   './',
   './index.html',
   './manifest.json',
-  'https://cdn.tailwindcss.com'
+  'https://cdn.tailwindcss.com',
+  // Pre-cache the notification icon
+  'https://api.iconify.design/lucide:layout-grid.svg?color=%23111827'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(URLS_TO_CACHE))
+      .then((cache) => {
+          console.log('Opened cache');
+          return cache.addAll(PRECACHE_URLS);
+      })
   );
   self.skipWaiting();
 });
@@ -32,42 +39,55 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only handle HTTP/HTTPS requests
+  // Only handle HTTP/HTTPS
   if (!event.request.url.startsWith('http')) return;
 
+  const url = new URL(event.request.url);
+
+  // Strategy: Cache First, then Network (Dynamic Caching)
+  // We check cache first for everything to ensure offline speed and availability.
+  // If not in cache, we fetch from network and update cache if it's a valid resource we care about.
+
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Cache Hit - return response
-        if (response) {
-          return response;
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
+      return fetch(event.request).then((networkResponse) => {
+        // Validate response
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type === 'error') {
+          return networkResponse;
         }
 
-        const fetchRequest = event.request.clone();
+        // Cache Filtering:
+        // 1. Local assets (origin matches)
+        // 2. esm.sh (React, Lucide, etc.)
+        // 3. tailwindcss.com
+        // 4. iconify.design (Icons)
+        const shouldCache = 
+            url.origin === self.location.origin ||
+            url.hostname.includes('esm.sh') ||
+            url.hostname.includes('tailwindcss.com') ||
+            url.hostname.includes('iconify.design');
 
-        return fetch(fetchRequest).then(
-          (response) => {
-            if (!response || response.status !== 200 || response.type === 'error') {
-              return response;
-            }
+        if (shouldCache) {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
 
-            const responseToCache = response.clone();
-
-            caches.open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(event.request, responseToCache);
-              });
-
-            return response;
-          }
-        ).catch((err) => {
-            // Network failure (Offline)
-            if (event.request.mode === 'navigate') {
-                return caches.match('./index.html');
-            }
-            throw err;
-        });
-      })
+        return networkResponse;
+      }).catch((err) => {
+         console.error('Fetch failed:', err);
+         // Fallback for Navigation (HTML)
+         if (event.request.mode === 'navigate') {
+             return caches.match('./index.html');
+         }
+         // Optional: Return a placeholder image for failed image requests
+      });
+    })
   );
 });
 

@@ -61,6 +61,9 @@ export interface UserState {
   alarmDuration: number; // seconds
   chimeDuration: number; // seconds
   soundType: SoundType;
+  // DND Config
+  dndStartTime?: string; // "22:00"
+  dndEndTime?: string;   // "07:00"
 }
 
 export interface FoodHistoryItem {
@@ -97,7 +100,9 @@ export const INITIAL_STATE: AppState = {
       vibrationEnabled: true,
       alarmDuration: 30,
       chimeDuration: 5,
-      soundType: 'modern'
+      soundType: 'modern',
+      dndStartTime: "23:00",
+      dndEndTime: "07:00"
   },
   categories: [
     { id: 'str', name: 'Strength', color: 'red' },

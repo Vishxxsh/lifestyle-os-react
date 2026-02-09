@@ -1,5 +1,6 @@
+
 {
-  "name": "LifestyleOS v.05 (Pending)",
-  "description": "pending:\nNotifications sound and ringtones\nBackground Notifications\nBetter Colours for Categories",
+  "name": "LifestyleOS v.06 (Offline Ready)",
+  "description": "Features:\n- Fully Offline Capable (SW Caching)\n- Background Notifications\n- Loop-style Habit Matrix\n- Quantitative Habit Inputs",
   "requestFramePermissions": []
 }

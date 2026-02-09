@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Modal } from './Modal';
-import { Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, Smartphone, SmartphoneNfc, Music, Clock } from 'lucide-react';
+import { Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, Smartphone, SmartphoneNfc, Music, Clock, MoonStar } from 'lucide-react';
 import { SoundType } from '../types';
 
 interface SettingsModalProps {
@@ -109,6 +109,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                             {state.user.vibrationEnabled ? 'On' : 'Off'}
                         </span>
                     </button>
+                </div>
+
+                {/* Do Not Disturb */}
+                <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
+                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                        <MoonStar size={14} /> Do Not Disturb
+                     </h3>
+                     <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl space-y-4">
+                         <div className="flex justify-between items-center">
+                            <label className="text-sm font-bold text-gray-900 dark:text-white">Start Time</label>
+                            <input 
+                                type="time" 
+                                value={state.user.dndStartTime || "23:00"}
+                                onChange={(e) => updateUserConfig({ dndStartTime: e.target.value })}
+                                className="bg-white dark:bg-gray-700 p-2 rounded-lg text-sm font-bold outline-none"
+                            />
+                         </div>
+                         <div className="flex justify-between items-center">
+                            <label className="text-sm font-bold text-gray-900 dark:text-white">End Time</label>
+                            <input 
+                                type="time" 
+                                value={state.user.dndEndTime || "07:00"}
+                                onChange={(e) => updateUserConfig({ dndEndTime: e.target.value })}
+                                className="bg-white dark:bg-gray-700 p-2 rounded-lg text-sm font-bold outline-none"
+                            />
+                         </div>
+                         <p className="text-[10px] text-gray-400">
+                             Notifications and alarms will be silenced between these times.
+                         </p>
+                     </div>
                 </div>
 
                 {/* Audio Customization */}
