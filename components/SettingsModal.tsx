@@ -100,6 +100,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         downloadAnchorNode.remove();
     };
 
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -114,6 +118,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             }
         };
         reader.readAsText(file);
+        
+        // Reset input so same file can be selected again if needed
+        e.target.value = '';
     };
 
     const handleRecalculate = () => {
@@ -325,17 +332,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         <Download size={18} /> Backup Data
                     </button>
 
-                    <label className="w-full flex flex-col items-center justify-center gap-2 py-4 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white font-bold rounded-xl border border-dashed border-gray-300 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <div 
+                        onClick={handleImportClick}
+                        className="w-full flex flex-col items-center justify-center gap-2 py-4 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white font-bold rounded-xl border border-dashed border-gray-300 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
                         <Upload size={18} /> 
                         <span>Import Backup</span>
-                        <input 
-                            ref={fileInputRef}
-                            type="file" 
-                            accept=".json" 
-                            onChange={handleFileChange} 
-                            className="hidden" 
-                        />
-                    </label>
+                    </div>
+                    {/* Hidden input moved out of the styled container to avoid layout issues, triggered via ref */}
+                    <input 
+                        ref={fileInputRef}
+                        type="file" 
+                        accept=".json" 
+                        onChange={handleFileChange} 
+                        className="hidden" 
+                    />
+                    
                     {importStatus && <p className="text-center text-sm font-bold text-green-600">{importStatus}</p>}
 
                     <button 
