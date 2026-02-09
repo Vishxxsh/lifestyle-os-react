@@ -332,7 +332,7 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                     )}
                     {categoryConsistency.length > 0 && (
                         <p className="text-[10px] text-gray-400 px-1">
-                            Calculated based on days passed this month. Any progress on numeric habits (> 0) counts as consistency.
+                            Calculated based on days passed this month. Any progress on numeric habits (&gt; 0) counts as consistency.
                         </p>
                     )}
                 </div>
