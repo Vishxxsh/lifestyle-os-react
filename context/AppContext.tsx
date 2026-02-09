@@ -208,11 +208,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let { xp, level } = prev.user;
       const xpPerUnit = habit.xpReward || 1; 
       
-      xp += xpPerUnit * amount; 
+      // Handle both positive and negative increments
+      const xpChange = xpPerUnit * amount;
       
-      while (xp >= level * 100) { 
-        xp -= level * 100;
-        level++; 
+      if (xpChange > 0) {
+          xp += xpChange;
+          while (xp >= level * 100) { 
+            xp -= level * 100;
+            level++; 
+          }
+      } else {
+          // Prevent dropping below 0 for the current level (simple implementation)
+          xp = Math.max(0, xp + xpChange);
       }
 
       return { ...prev, logs: newLogs, user: { ...prev.user, level, xp } };
@@ -221,12 +228,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setHabitValue = (id: number, date: string, value: number | boolean) => {
       setState(prev => {
+        const habit = prev.habits.find(h => h.id === id);
+        // If habit undefined, just update logs without XP calc
+        if (!habit) {
+             const dayLogs = prev.logs[date] || {};
+             const newLogs = {
+                ...prev.logs,
+                [date]: { ...dayLogs, [id]: value }
+             };
+             return { ...prev, logs: newLogs };
+        }
+
         const dayLogs = prev.logs[date] || {};
+        const oldValue = dayLogs[id];
+        
+        // If value unchanged, do nothing to prevent unnecessary renders/calcs
+        if (oldValue === value) return prev;
+
+        // Calculate XP Change
+        let xpChange = 0;
+        // Default rewards: 10 for checkbox, 1 per unit for numeric
+        const reward = habit.xpReward || (habit.type === 'checkbox' ? 10 : 1);
+
+        if (habit.type === 'checkbox') {
+            const oldBool = !!oldValue;
+            const newBool = !!value;
+            if (newBool !== oldBool) {
+                xpChange = newBool ? reward : -reward;
+            }
+        } else {
+            const oldNum = (typeof oldValue === 'number') ? oldValue : 0;
+            const newNum = (typeof value === 'number') ? value : 0;
+            xpChange = (newNum - oldNum) * reward;
+        }
+
+        let { xp, level } = prev.user;
+
+        if (xpChange > 0) {
+            xp += xpChange;
+            while (xp >= level * 100) {
+                xp -= level * 100;
+                level++;
+            }
+        } else if (xpChange < 0) {
+            // Cap at 0 to prevent de-leveling complexity
+            xp = Math.max(0, xp + xpChange);
+        }
+
         const newLogs = {
             ...prev.logs,
             [date]: { ...dayLogs, [id]: value }
         };
-        return { ...prev, logs: newLogs };
+
+        return { ...prev, logs: newLogs, user: { ...prev.user, level, xp } };
       });
   };
 

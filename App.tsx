@@ -6,6 +6,7 @@ import { TabHabits } from './components/TabHabits';
 import { TabMeals } from './components/TabMeals';
 import { TabGoals } from './components/TabGoals';
 import { TabReports } from './components/TabReports';
+import { TabExport } from './components/TabExport'; 
 import { SettingsModal } from './components/SettingsModal';
 import { Home, CheckSquare, Utensils, Target, BarChart3, Plus, X, Bell, AlarmClock } from 'lucide-react';
 import { getTodayStr } from './utils';
@@ -65,11 +66,10 @@ const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => voi
 };
 
 // Component to handle background checks for notifications
-// Now exposes an "Active Alarm" state to the parent
 const NotificationManager: React.FC<{ 
     onNotify: (title: string, msg: string) => void,
     onAlarmStart: (title: string, msg: string, habitId?: number) => void
-    alarmDismissSignal: number // Incremented by parent to stop sound
+    alarmDismissSignal: number 
     onRemoteDismiss: () => void;
     onRemoteComplete: (habitId: number) => void;
 }> = ({ onNotify, onAlarmStart, alarmDismissSignal, onRemoteDismiss, onRemoteComplete }) => {
@@ -77,7 +77,6 @@ const NotificationManager: React.FC<{
   const lastCheckedMinute = useRef<string>("");
   const activeOscillator = useRef<OscillatorNode | null>(null);
 
-  // Cleanup on unmount
   useEffect(() => {
       return () => {
           if (activeOscillator.current) {
@@ -89,17 +88,15 @@ const NotificationManager: React.FC<{
       };
   }, []);
 
-  // Listen for Service Worker Messages (Notification Clicks)
+  // Listen for Service Worker Messages
   useEffect(() => {
       const handleSWMessage = (event: MessageEvent) => {
           if (!event.data) return;
           
           if (event.data.type === 'DISMISS_ALARM') {
-              console.log("Received remote dismiss");
               onRemoteDismiss();
           } 
           else if (event.data.type === 'COMPLETE_HABIT') {
-              console.log("Received remote complete", event.data.habitId);
               if (event.data.habitId) {
                   onRemoteComplete(parseInt(event.data.habitId));
               }
@@ -130,25 +127,22 @@ const NotificationManager: React.FC<{
 
   const playSound = (type: 'alarm' | 'chime') => {
     const { soundEnabled, vibrationEnabled, alarmDuration, chimeDuration, soundType } = state.user;
+    if (soundEnabled === false) return;
 
     const duration = type === 'alarm' ? alarmDuration : chimeDuration;
 
-    // Handle Vibration using Navigator API
+    // Vibration
     if (vibrationEnabled && navigator.vibrate) {
         if (type === 'alarm') {
-            // Intense vibration pattern for alarm
             navigator.vibrate([500, 200, 500, 200, 1000]); 
         } else {
-            // Repeating pattern for chime duration
             const pulses = Math.max(1, Math.floor(duration / 0.5));
             const pattern = Array(pulses).fill(0).flatMap(() => [200, 300]);
             navigator.vibrate(pattern);
         }
     }
 
-    // Handle Sound
-    if (soundEnabled === false) return;
-
+    // Audio
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContext) return;
@@ -162,28 +156,19 @@ const NotificationManager: React.FC<{
       gain.connect(ctx.destination);
       
       if (type === 'alarm') {
-        // ALARM
         if (soundType === 'classic') {
              osc.type = 'square';
              osc.frequency.setValueAtTime(880, now);
              for(let i=0; i < duration; i += 1) {
                 gain.gain.setValueAtTime(0.2, now + i);
                 gain.gain.setValueAtTime(0, now + i + 0.1);
-                gain.gain.setValueAtTime(0.2, now + i + 0.2);
-                gain.gain.setValueAtTime(0, now + i + 0.3);
-                gain.gain.setValueAtTime(0.2, now + i + 0.4);
-                gain.gain.setValueAtTime(0, now + i + 0.5);
              }
         } else if (soundType === 'retro') {
              osc.type = 'sawtooth';
              for(let i=0; i < duration; i+=0.5) {
                  osc.frequency.setValueAtTime(440, now + i);
                  osc.frequency.setValueAtTime(880, now + i + 0.1);
-                 osc.frequency.setValueAtTime(1320, now + i + 0.2);
-                 osc.frequency.setValueAtTime(880, now + i + 0.3);
-                 
                  gain.gain.setValueAtTime(0.15, now + i);
-                 gain.gain.setValueAtTime(0.15, now + i + 0.4);
                  gain.gain.linearRampToValueAtTime(0, now + i + 0.5);
              }
         } else {
@@ -201,23 +186,17 @@ const NotificationManager: React.FC<{
         activeOscillator.current = osc;
 
       } else {
-        // INTERVAL CHIME
         if (soundType === 'classic') {
              osc.type = 'triangle';
              for(let i=0; i < duration; i+=1.5) {
                  osc.frequency.setValueAtTime(880, now + i);
                  gain.gain.setValueAtTime(0.2, now + i);
                  gain.gain.exponentialRampToValueAtTime(0.01, now + i + 0.4);
-                 
-                 osc.frequency.setValueAtTime(660, now + i + 0.5);
-                 gain.gain.setValueAtTime(0.2, now + i + 0.5);
-                 gain.gain.exponentialRampToValueAtTime(0.01, now + i + 1.0);
              }
         } else if (soundType === 'retro') {
              osc.type = 'square';
              for(let i=0; i < duration; i+=1) {
                  osc.frequency.setValueAtTime(900, now + i);
-                 osc.frequency.linearRampToValueAtTime(1400, now + i + 0.1);
                  gain.gain.setValueAtTime(0.1, now + i);
                  gain.gain.linearRampToValueAtTime(0, now + i + 0.15);
              }
@@ -229,7 +208,6 @@ const NotificationManager: React.FC<{
                 osc.frequency.setValueAtTime(880, now + i);
              }
         }
-
         osc.start(now);
         osc.stop(now + duration);
       }
@@ -240,22 +218,21 @@ const NotificationManager: React.FC<{
 
   const sendNotification = async (title: string, body: string, isAlarm: boolean, habitId?: number) => {
     if (!("Notification" in window)) return;
-    
-    // Fallback if permission not granted
     if (Notification.permission !== "granted") return;
 
-    // USE SERVICE WORKER FOR SYSTEM NOTIFICATIONS
+    // Use absolute URL from manifest for reliability
+    const iconUrl = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
+
     if ('serviceWorker' in navigator) {
         try {
             const registration = await navigator.serviceWorker.ready;
-            
-            // Native-like options with Actions
             const options: any = {
                 body: body,
-                icon: '/icon.png',
-                badge: '/icon.png',
-                vibrate: isAlarm ? [500, 200, 500] : [200, 300, 200, 300, 200], 
-                tag: isAlarm ? 'lifestyle-alarm' : 'lifestyle-notification', 
+                icon: iconUrl,
+                badge: iconUrl,
+                // Simple vibration pattern supported by most devices
+                vibrate: [200, 100, 200, 100, 200, 100, 200],
+                tag: isAlarm ? 'alarm-' + Date.now() : 'notification-' + Date.now(), // Unique tag to ensure it pops
                 renotify: true, 
                 requireInteraction: isAlarm,
                 data: {
@@ -265,25 +242,21 @@ const NotificationManager: React.FC<{
                 actions: isAlarm 
                     ? [
                         { action: 'complete', title: 'Complete' },
-                        { action: 'dismiss', title: 'Stop' }
+                        { action: 'dismiss', title: 'Stop Alarm' }
                       ]
                     : [
                         { action: 'dismiss', title: 'Dismiss' }
                       ]
             };
 
-            registration.showNotification(title, options);
-            return;
+            await registration.showNotification(title, options);
         } catch (e) {
             console.error("SW Notification failed", e);
+            // Fallback
+            new Notification(title, { body, icon: iconUrl });
         }
-    }
-
-    // Fallback to basic Notification API
-    try {
-      new Notification(title, { body, icon: '/icon.png' });
-    } catch (e) {
-      console.error("Notification failed", e);
+    } else {
+      new Notification(title, { body, icon: iconUrl });
     }
   };
 
@@ -326,7 +299,6 @@ const NotificationManager: React.FC<{
                 shouldNotify = true;
                 notificationTitle = `Reminder: ${habit.name}`;
                 notificationBody = `Keep the streak alive!`;
-                // For interval reminders, we can also link the habit ID for completion
                 alarmHabitId = habit.id; 
              }
            }
@@ -340,7 +312,6 @@ const NotificationManager: React.FC<{
                 chimeTriggered = true;
                 onNotify(notificationTitle, notificationBody);
             }
-            // Pass habitID to enable action buttons in notification
             sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmHabitId);
         }
       });
@@ -352,7 +323,6 @@ const NotificationManager: React.FC<{
     };
 
     const interval = setInterval(checkReminders, 5000); 
-
     return () => clearInterval(interval);
   }, [state.habits, state.logs, onNotify, onAlarmStart, state.user]);
 
@@ -364,14 +334,10 @@ const AppContent: React.FC = () => {
   const { state, fabOnClick, toggleHabit } = useApp();
   const [toast, setToast] = useState<{title: string, msg: string} | null>(null);
   
-  // Alarm Overlay State
   const [activeAlarm, setActiveAlarm] = useState<{title: string, msg: string, habitId?: number} | null>(null);
   const [dismissSignal, setDismissSignal] = useState(0);
-
-  // Settings Modal State (Global)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Dark Mode Effect
   useEffect(() => {
     if (state.user.theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -380,13 +346,12 @@ const AppContent: React.FC = () => {
     }
   }, [state.user.theme]);
 
-  // Memoize handlers to prevent NotificationManager re-renders
   const handleNotify = useCallback((title: string, msg: string) => setToast({ title, msg }), []);
   const handleAlarmStart = useCallback((title: string, msg: string, habitId?: number) => setActiveAlarm({ title, msg, habitId }), []);
 
   const handleDismissAlarm = useCallback(() => {
       setActiveAlarm(null);
-      setDismissSignal(prev => prev + 1); // Signal manager to stop sound
+      setDismissSignal(prev => prev + 1); 
   }, []);
 
   const handleCompleteAlarm = useCallback(() => {
@@ -430,7 +395,7 @@ const AppContent: React.FC = () => {
   );
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-gray-50 dark:bg-gray-950 dark:text-gray-100 shadow-2xl overflow-hidden relative flex flex-col transition-colors duration-300">
+    <div className="max-w-md mx-auto h-[100dvh] bg-gray-50 dark:bg-gray-950 dark:text-gray-100 shadow-2xl overflow-hidden relative flex flex-col transition-colors duration-300">
       <NotificationManager 
         onNotify={handleNotify} 
         onAlarmStart={handleAlarmStart}
@@ -439,7 +404,6 @@ const AppContent: React.FC = () => {
         onRemoteComplete={handleRemoteComplete}
       />
       
-      {/* Full Screen Alarm Overlay */}
       {activeAlarm && (
           <AlarmOverlay 
             title={activeAlarm.title} 
@@ -449,10 +413,8 @@ const AppContent: React.FC = () => {
           />
       )}
 
-      {/* Global Settings Modal */}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
-      {/* Toast Notification */}
       {toast && (
         <Toast 
           title={toast.title} 
@@ -461,14 +423,12 @@ const AppContent: React.FC = () => {
         />
       )}
       
-      {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto no-scrollbar p-6">
         <div className="fade-enter-active">
            {renderTab()}
         </div>
       </main>
 
-      {/* Global FAB */}
       {fabOnClick && (
         <button 
           onClick={fabOnClick}
@@ -478,7 +438,6 @@ const AppContent: React.FC = () => {
         </button>
       )}
 
-      {/* Bottom Nav */}
       <nav className="h-[80px] bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between px-2 pb-4 z-40 absolute bottom-0 w-full transition-colors duration-300">
         <NavItem id="home" icon={Home} label="Home" />
         <NavItem id="habits" icon={CheckSquare} label="Habits" />

@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'lifestyle-os-v4';
+const CACHE_NAME = 'lifestyle-os-v5';
 const URLS_TO_CACHE = [
   './',
   './index.html',
@@ -75,40 +75,32 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
 
-  // Handle Action Buttons (Dismiss / Complete)
-  if (event.action === 'dismiss') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-        clientList.forEach(client => {
+  const promiseChain = clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true
+  }).then((clientList) => {
+    // Message all clients
+    if (event.action === 'dismiss') {
+       clientList.forEach(client => {
           client.postMessage({ type: 'DISMISS_ALARM' });
-        });
-      })
-    );
-  } else if (event.action === 'complete') {
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-        const habitId = event.notification.data.habitId;
-        clientList.forEach(client => {
+       });
+    } else if (event.action === 'complete') {
+       const habitId = event.notification.data.habitId;
+       clientList.forEach(client => {
           client.postMessage({ type: 'COMPLETE_HABIT', habitId: habitId });
-        });
-      })
-    );
-  } else {
-    // Standard Click - Focus Window or Open
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-        // If a window is already open, focus it
-        for (var i = 0; i < clientList.length; i++) {
-          var client = clientList[i];
-          if (client.url && 'focus' in client) {
-            return client.focus();
-          }
-        }
-        // Otherwise open a new window
-        if (clients.openWindow) {
-          return clients.openWindow('/');
-        }
-      })
-    );
-  }
+       });
+    } else {
+       // Standard Click - Focus Window
+       for (const client of clientList) {
+         if (client.url && 'focus' in client) {
+           return client.focus();
+         }
+       }
+       if (clients.openWindow) {
+         return clients.openWindow('/');
+       }
+    }
+  });
+
+  event.waitUntil(promiseChain);
 });
