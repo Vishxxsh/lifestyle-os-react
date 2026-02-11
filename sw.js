@@ -2,13 +2,12 @@
 const CACHE_NAME = 'lifestyle-os-v6-offline';
 
 // Core assets to pre-cache immediately
+// CRITICAL: Do NOT include external CDNs here (like tailwind). 
+// If they fail to fetch during install, the Service Worker fails to install entirely.
 const PRECACHE_URLS = [
   './',
   './index.html',
-  './manifest.json',
-  'https://cdn.tailwindcss.com',
-  // Pre-cache the notification icon
-  'https://api.iconify.design/lucide:layout-grid.svg?color=%23111827'
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -85,7 +84,6 @@ self.addEventListener('fetch', (event) => {
          if (event.request.mode === 'navigate') {
              return caches.match('./index.html');
          }
-         // Optional: Return a placeholder image for failed image requests
       });
     })
   );

@@ -48,19 +48,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         const icon = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
 
         try {
-            // Try Service Worker First with a timeout
-            // If SW hangs (common in some states), we want to fail fast and try fallback or alert
+            // Try getting existing registration first (Fastest/Most Reliable)
+            let reg: ServiceWorkerRegistration | undefined;
+            
             if ('serviceWorker' in navigator) {
-                const swPromise = navigator.serviceWorker.ready;
-                const timeoutPromise = new Promise<never>((_, reject) => 
-                    setTimeout(() => reject(new Error("SW Ready Timeout")), 3000)
-                );
+                try {
+                    reg = await navigator.serviceWorker.getRegistration();
+                } catch(e) {
+                    console.warn("Could not get registration directly", e);
+                }
 
-                const reg = await Promise.race([swPromise, timeoutPromise]) as ServiceWorkerRegistration;
-                
+                // If no registration found, try waiting for ready (Initial load case)
+                if (!reg) {
+                    try {
+                        const swPromise = navigator.serviceWorker.ready;
+                        const timeoutPromise = new Promise<never>((_, reject) => 
+                            setTimeout(() => reject(new Error("SW Ready Timeout")), 2000)
+                        );
+                        reg = await Promise.race([swPromise, timeoutPromise]) as ServiceWorkerRegistration;
+                    } catch(e) {
+                        console.warn("SW Ready timed out", e);
+                    }
+                }
+            }
+
+            if (reg) {
                 await reg.showNotification(title, {
                     body,
                     icon,
+                    badge: icon,
                     vibrate: [200, 100, 200]
                 } as any);
                 return;
@@ -69,7 +85,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             console.warn("SW notification failed, trying fallback:", e);
         }
         
-        // Fallback to standard Notification API
+        // Fallback to standard Notification API (Likely to fail on Android if SW failed, but worth a shot)
         try {
             new Notification(title, { body, icon });
         } catch (e) {
@@ -285,77 +301,86 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <div className="flex items-start gap-3">
                         {permissionStatus === 'granted' 
                             ? <CheckCircle2 size={20} className="text-emerald-500 shrink-0 mt-0.5" /> 
-                            : <AlertCircle size={20} className="text-blue-500 shrink-0 mt-0.5" />
+                            : <AlertCircle size={20} className="text-orange-500 shrink-0 mt-0.5" />
                         }
-                        <div className="flex-1">
-                            <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300">System Notifications</h4>
-                            <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                                Status: <span className="uppercase font-bold">{permissionStatus}</span>. 
-                                {permissionStatus !== 'granted' && " Enable this to receive reminders."}
+                        <div>
+                            <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                                {permissionStatus === 'granted' ? 'Notifications Active' : 'Notifications Required'}
+                            </h4>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                {permissionStatus === 'granted' 
+                                    ? "Alarms and reminders will work even when the app is in the background." 
+                                    : "Please enable notifications to receive alarms and habit reminders."}
                             </p>
                         </div>
                     </div>
-
-                    <div className="flex gap-2">
-                         {permissionStatus !== 'granted' && (
-                             <button 
-                                onClick={requestPerms}
-                                className="flex-1 text-xs bg-blue-500 text-white px-3 py-2 rounded-lg font-bold hover:bg-blue-600 transition-colors"
-                            >
-                                Grant Permission
-                            </button>
-                         )}
-                         <button 
-                             onClick={sendTestNotification}
-                             className="flex-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-2 rounded-lg font-bold border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                         >
-                             Test Notification
-                         </button>
-                    </div>
+                    {permissionStatus !== 'granted' && (
+                        <button 
+                            onClick={requestPerms}
+                            className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg text-xs"
+                        >
+                            Enable Notifications
+                        </button>
+                    )}
+                    <button 
+                        onClick={sendTestNotification}
+                        className="w-full py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-lg text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                        Test Notification
+                    </button>
                 </div>
 
                 {/* Data Management */}
                 <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Data Management</h3>
-                    
-                    <button 
-                        onClick={handleRecalculate}
-                        className="w-full flex items-center justify-center gap-2 py-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold rounded-xl border border-orange-100 dark:border-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/40 active:scale-95 transition-transform"
-                    >
-                        <RefreshCw size={18} /> Recalculate XP
-                    </button>
+                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Data Vault</h3>
+                     
+                     <div className="grid grid-cols-2 gap-3">
+                         <button 
+                             onClick={handleExport}
+                             className="flex flex-col items-center justify-center gap-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                         >
+                             <Download size={20} className="text-gray-700 dark:text-gray-300" />
+                             <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Backup</span>
+                         </button>
 
-                    <button 
-                        onClick={handleExport}
-                        className="w-full flex items-center justify-center gap-2 py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-xl active:scale-95 transition-transform"
-                    >
-                        <Download size={18} /> Backup Data
-                    </button>
+                         <label className="flex flex-col items-center justify-center gap-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer relative overflow-hidden">
+                             <Upload size={20} className="text-gray-700 dark:text-gray-300" />
+                             <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Restore</span>
+                             <input 
+                                 ref={fileInputRef}
+                                 type="file" 
+                                 accept=".json" 
+                                 onChange={handleFileChange} 
+                                 className="absolute inset-0 opacity-0 cursor-pointer" 
+                             />
+                         </label>
+                     </div>
+                     
+                     {importStatus && (
+                        <div className={`text-center text-xs font-bold ${importStatus.includes("success") ? "text-emerald-500" : "text-red-500"}`}>
+                            {importStatus}
+                        </div>
+                     )}
 
-                    <div 
-                        onClick={handleImportClick}
-                        className="w-full flex flex-col items-center justify-center gap-2 py-4 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white font-bold rounded-xl border border-dashed border-gray-300 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        <Upload size={18} /> 
-                        <span>Import Backup</span>
-                    </div>
-                    {/* Hidden input moved out of the styled container to avoid layout issues, triggered via ref */}
-                    <input 
-                        ref={fileInputRef}
-                        type="file" 
-                        accept=".json" 
-                        onChange={handleFileChange} 
-                        className="hidden" 
-                    />
-                    
-                    {importStatus && <p className="text-center text-sm font-bold text-green-600">{importStatus}</p>}
+                     <button 
+                         onClick={handleRecalculate}
+                         className="w-full py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-bold rounded-xl flex items-center justify-center gap-2 text-xs"
+                     >
+                         <RefreshCw size={14} /> Recalculate Levels
+                     </button>
 
-                    <button 
-                        onClick={handleNuke}
-                        className="w-full flex items-center justify-center gap-2 py-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl border border-red-100 dark:border-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/40 active:scale-95 transition-transform mt-2"
-                    >
-                        <AlertTriangle size={18} /> Factory Reset
-                    </button>
+                     <button 
+                         onClick={handleNuke}
+                         className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl flex items-center justify-center gap-2 text-xs hover:bg-red-100 dark:hover:bg-red-900/30"
+                     >
+                         <AlertTriangle size={14} /> Reset All Data
+                     </button>
+                </div>
+
+                <div className="text-center pt-4 border-t border-gray-100 dark:border-gray-800">
+                    <p className="text-[10px] text-gray-400">
+                        Lifestyle OS v6.0 • Local Storage Only
+                    </p>
                 </div>
             </div>
         </Modal>

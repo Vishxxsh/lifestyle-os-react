@@ -224,6 +224,12 @@ const NotificationManager: React.FC<{
 
   const sendNotification = async (title: string, body: string, isAlarm: boolean, habitId?: number) => {
     if (!("Notification" in window)) return;
+    
+    // Auto request permission if default
+    if (Notification.permission === 'default') {
+        await Notification.requestPermission();
+    }
+    
     if (Notification.permission !== "granted") return;
     if (isDNDActive()) return;
 
@@ -233,38 +239,37 @@ const NotificationManager: React.FC<{
     // Try Service Worker first (Required for Android Background)
     if ('serviceWorker' in navigator) {
         try {
-            // Race condition check: If SW is not ready within 2s, assume broken state and fallback
-            const swPromise = navigator.serviceWorker.ready;
-            const timeoutPromise = new Promise<never>((_, reject) => 
-                setTimeout(() => reject(new Error("SW Ready Timeout")), 2000)
-            );
-            
-            const registration = await Promise.race([swPromise, timeoutPromise]) as ServiceWorkerRegistration;
-            const options: any = {
-                body: body,
-                icon: iconUrl,
-                badge: iconUrl,
-                // Simple vibration pattern supported by most devices
-                vibrate: [200, 100, 200, 100, 200, 100, 200],
-                tag: isAlarm ? 'alarm-' + Date.now() : 'notification-' + Date.now(), // Unique tag to ensure it pops
-                renotify: true, 
-                requireInteraction: isAlarm,
-                data: {
-                    url: window.location.href,
-                    habitId: habitId
-                },
-                actions: isAlarm 
-                    ? [
-                        { action: 'complete', title: 'Complete' },
-                        { action: 'dismiss', title: 'Stop Alarm' }
-                      ]
-                    : [
-                        { action: 'dismiss', title: 'Dismiss' }
-                      ]
-            };
+            // Get existing registration (more reliable than ready in some contexts)
+            let reg = await navigator.serviceWorker.getRegistration();
+            if (!reg) {
+                // If not found, wait for ready
+                 reg = await navigator.serviceWorker.ready;
+            }
 
-            await registration.showNotification(title, options);
-            return; // Success via SW
+            if (reg) {
+                await reg.showNotification(title, {
+                    body,
+                    icon: iconUrl,
+                    badge: iconUrl,
+                    vibrate: [200, 100, 200, 100, 200, 100, 200],
+                    tag: isAlarm ? 'alarm-' + Date.now() : 'notification-' + Date.now(),
+                    renotify: true,
+                    requireInteraction: isAlarm,
+                    data: {
+                        url: window.location.href,
+                        habitId: habitId
+                    },
+                    actions: isAlarm 
+                        ? [
+                            { action: 'complete', title: 'Complete' },
+                            { action: 'dismiss', title: 'Stop Alarm' }
+                          ]
+                        : [
+                            { action: 'dismiss', title: 'Dismiss' }
+                          ]
+                } as any);
+                return;
+            }
         } catch (e) {
             console.warn("SW Notification failed, using fallback logic", e);
         }
@@ -307,9 +312,9 @@ const NotificationManager: React.FC<{
       if (isDNDActive()) return;
 
       const now = new Date();
-      const currentHours = now.getHours().toString().padStart(2, '0');
-      const currentMinutes = now.getMinutes().toString().padStart(2, '0');
-      const currentTimeStr = `${currentHours}:${currentMinutes}`;
+      // const currentHours = now.getHours().toString().padStart(2, '0');
+      // const currentMinutes = now.getMinutes().toString().padStart(2, '0');
+      // const currentTimeStr = `${currentHours}:${currentMinutes}`;
       
       const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
       const today = getTodayStr();
