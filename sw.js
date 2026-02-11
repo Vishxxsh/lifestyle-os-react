@@ -1,9 +1,7 @@
 
 const CACHE_NAME = 'lifestyle-os-v6-offline';
 
-// Core assets to pre-cache immediately
-// CRITICAL: Do NOT include external CDNs here (like tailwind). 
-// If they fail to fetch during install, the Service Worker fails to install entirely.
+// Core assets to pre-cache
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -15,7 +13,12 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
           console.log('Opened cache');
-          return cache.addAll(PRECACHE_URLS);
+          // CRITICAL FIX: catch errors here so the Service Worker still installs 
+          // even if one file fails to fetch (e.g. 404 or network blip).
+          // This ensures the Notification capabilities are registered.
+          return cache.addAll(PRECACHE_URLS).catch(err => {
+              console.warn('SW Precache warning (non-fatal):', err);
+          });
       })
   );
   self.skipWaiting();
@@ -42,10 +45,6 @@ self.addEventListener('fetch', (event) => {
   if (!event.request.url.startsWith('http')) return;
 
   const url = new URL(event.request.url);
-
-  // Strategy: Cache First, then Network (Dynamic Caching)
-  // We check cache first for everything to ensure offline speed and availability.
-  // If not in cache, we fetch from network and update cache if it's a valid resource we care about.
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {

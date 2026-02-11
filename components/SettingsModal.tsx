@@ -50,7 +50,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         let swError: any = null;
 
         try {
-            // Try getting existing registration first (Fastest/Most Reliable)
+            // 1. Try getting existing registration
             let reg: ServiceWorkerRegistration | undefined;
             
             if ('serviceWorker' in navigator) {
@@ -61,7 +61,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     swError = e;
                 }
 
-                // If no registration found, try waiting for ready (Initial load case)
+                // SELF-HEALING: If no registration, try to force register immediately
+                if (!reg) {
+                    console.log("No SW found, attempting immediate registration...");
+                    try {
+                        reg = await navigator.serviceWorker.register('/sw.js');
+                        // Small delay to let it settle
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    } catch (regErr) {
+                        console.error("Immediate registration failed", regErr);
+                        swError = swError || regErr;
+                    }
+                }
+
+                // If still no registration, try waiting for ready (fallback for initial load race conditions)
                 if (!reg) {
                     try {
                         const swPromise = navigator.serviceWorker.ready;
@@ -76,6 +89,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 }
             }
 
+            // 2. If we have a registration, use it (Required for Android)
             if (reg) {
                 await reg.showNotification(title, {
                     body,
@@ -85,21 +99,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 } as any);
                 return;
             } else if (!swError) {
-                swError = new Error("No Service Worker Registration found.");
+                swError = new Error("No Service Worker Registration found even after self-healing.");
             }
         } catch (e) {
             console.warn("SW notification failed, trying fallback:", e);
             swError = e;
         }
         
-        // Fallback to standard Notification API (Likely to fail on Android if SW failed, but worth a shot)
+        // 3. Fallback to standard Notification API
+        // Note: This WILL fail on Android/PWA usually with "Illegal constructor", but acts as a final hail mary for Desktop.
         try {
             new Notification(title, { body, icon });
         } catch (e) {
             console.error("Standard notification failed", e);
             const err1 = swError instanceof Error ? swError.message : String(swError);
             const err2 = e instanceof Error ? e.message : String(e);
-            alert(`Notification Failed.\n\nSW Error: ${err1}\n\nFallback Error: ${err2}\n\nCommon Fixes:\n1. Check 'Do Not Disturb'\n2. Allow Notifications in Browser Settings\n3. Check Battery Saver`);
+            alert(`Notification Failed.\n\nSW Error: ${err1}\n\nFallback Error: ${err2}\n\nNote: Android requires the Service Worker. We attempted to re-register it. Please refresh the page and try again.`);
         }
     };
 

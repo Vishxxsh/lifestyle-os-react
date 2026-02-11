@@ -55,17 +55,20 @@
     <script type="module" src="/index.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
+        const registerSW = () => {
+           navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' })
             .then(reg => {
                 console.log('SW registered', reg);
-                // Ensure controller is active
-                if (!navigator.serviceWorker.controller) {
-                    // Force update if needed? 
-                }
             })
             .catch(err => console.log('SW failed', err));
-        });
+        };
+
+        // Check if page is already loaded
+        if (document.readyState === 'complete') {
+            registerSW();
+        } else {
+            window.addEventListener('load', registerSW);
+        }
       }
     </script>
 </body>
