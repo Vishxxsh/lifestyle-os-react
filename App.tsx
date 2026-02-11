@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TabHome } from './components/TabHome';
@@ -65,6 +64,35 @@ const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => voi
     );
 };
 
+// Generate a simple dynamic image for notification banner
+const generateNotificationImage = (text: string) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 300;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
+
+    // Background
+    const gradient = ctx.createLinearGradient(0, 0, 600, 300);
+    gradient.addColorStop(0, '#111827'); // gray-900
+    gradient.addColorStop(1, '#374151'); // gray-700
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 600, 300);
+
+    // Text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 40px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText("LifestyleOS", 300, 100);
+
+    ctx.fillStyle = '#60A5FA'; // blue-400
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText(text, 300, 180);
+
+    return canvas.toDataURL('image/png');
+};
+
 // Component to handle background checks for notifications
 const NotificationManager: React.FC<{ 
     onNotify: (title: string, msg: string) => void,
@@ -74,23 +102,11 @@ const NotificationManager: React.FC<{
     onRemoteComplete: (habitId: number) => void;
 }> = ({ onNotify, onAlarmStart, alarmDismissSignal, onRemoteDismiss, onRemoteComplete }) => {
   const { state } = useApp();
-  // Using useRef to track the last checked absolute minute to handle browser throttling (drift)
-  // initialized to current time to avoid immediate firing on load
   const lastCheckedTotalMinutes = useRef<number>(new Date().getHours() * 60 + new Date().getMinutes());
   const activeOscillator = useRef<OscillatorNode | null>(null);
+  const scheduledTriggers = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-      return () => {
-          if (activeOscillator.current) {
-              try {
-                activeOscillator.current.stop();
-                activeOscillator.current.disconnect();
-              } catch(e) {}
-          }
-      };
-  }, []);
-
-  // Listen for Service Worker Messages
+  // Handle SW Messages (Actions)
   useEffect(() => {
       const handleSWMessage = (event: MessageEvent) => {
           if (!event.data) return;
@@ -116,7 +132,7 @@ const NotificationManager: React.FC<{
       };
   }, [onRemoteDismiss, onRemoteComplete]);
 
-  // Effect to handle dismissal signal
+  // Stop sound on dismiss
   useEffect(() => {
       if (activeOscillator.current) {
           try {
@@ -130,25 +146,19 @@ const NotificationManager: React.FC<{
   const playSound = (type: 'alarm' | 'chime') => {
     const { soundEnabled, vibrationEnabled, alarmDuration, chimeDuration, soundType } = state.user;
     if (soundEnabled === false) return;
-
-    // Check DND for sound as well
     if (isDNDActive()) return;
 
     const duration = type === 'alarm' ? alarmDuration : chimeDuration;
 
-    // Vibration
     if (vibrationEnabled && navigator.vibrate) {
         if (type === 'alarm') {
             navigator.vibrate([500, 200, 500, 200, 1000]); 
         } else {
-            const pulses = Math.max(1, Math.floor(duration / 0.5));
-            const pattern = Array(pulses).fill(0).flatMap(() => [200, 300]);
-            navigator.vibrate(pattern);
+            // Heartbeat pattern for chime
+            navigator.vibrate([100, 50, 100]);
         }
     }
 
-    // Audio - Note: This only works if browser is active/foreground or screen on.
-    // For background/locked Android, we rely on the Notification API sound.
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContext) return;
@@ -161,6 +171,7 @@ const NotificationManager: React.FC<{
       osc.connect(gain);
       gain.connect(ctx.destination);
       
+      // Sound Synthesis Logic (Same as before)
       if (type === 'alarm') {
         if (soundType === 'classic') {
              osc.type = 'square';
@@ -186,110 +197,106 @@ const NotificationManager: React.FC<{
                  gain.gain.linearRampToValueAtTime(0, now + i + 1.2);
              }
         }
-        
         osc.start(now);
         osc.stop(now + duration);
         activeOscillator.current = osc;
 
       } else {
-        if (soundType === 'classic') {
-             osc.type = 'triangle';
-             for(let i=0; i < duration; i+=1.5) {
-                 osc.frequency.setValueAtTime(880, now + i);
-                 gain.gain.setValueAtTime(0.2, now + i);
-                 gain.gain.exponentialRampToValueAtTime(0.01, now + i + 0.4);
-             }
-        } else if (soundType === 'retro') {
-             osc.type = 'square';
-             for(let i=0; i < duration; i+=1) {
-                 osc.frequency.setValueAtTime(900, now + i);
-                 gain.gain.setValueAtTime(0.1, now + i);
-                 gain.gain.linearRampToValueAtTime(0, now + i + 0.15);
-             }
-        } else {
-             osc.type = 'triangle';
-             for(let i=0; i < duration; i += 0.5) {
-                gain.gain.setValueAtTime(0.15, now + i);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + i + 0.2);
-                osc.frequency.setValueAtTime(880, now + i);
-             }
-        }
-        osc.start(now);
-        osc.stop(now + duration);
+         // Short Chime
+         osc.type = 'sine';
+         osc.frequency.setValueAtTime(523.25, now); // C5
+         osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.1); // C6
+         gain.gain.setValueAtTime(0.1, now);
+         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+         osc.start(now);
+         osc.stop(now + 0.5);
       }
     } catch (e) {
       console.error("Audio play failed", e);
     }
   };
 
+  const scheduleNotification = async (title: string, body: string, triggerTimestamp: number, tag: string) => {
+      // Experimental: Timestamp Trigger for Background Delivery
+      // This is the only way to get true background notifications on Android PWA without a server.
+      if ('serviceWorker' in navigator && 'showTrigger' in Notification.prototype) {
+           const reg = await navigator.serviceWorker.ready;
+           // Check if we already scheduled this tag to avoid spamming the scheduler
+           if (scheduledTriggers.current.has(tag)) return;
+
+           try {
+               await reg.showNotification(title, {
+                   body,
+                   tag,
+                   icon: "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827",
+                   // @ts-ignore - Experimental API
+                   showTrigger: new TimestampTrigger(triggerTimestamp), 
+                   data: { url: window.location.href }
+               });
+               scheduledTriggers.current.add(tag);
+               console.log(`Scheduled background notification for ${new Date(triggerTimestamp).toLocaleTimeString()}`);
+           } catch(e) {
+               console.warn("TimestampTrigger failed", e);
+           }
+      }
+  };
+
   const sendNotification = async (title: string, body: string, isAlarm: boolean, habitId?: number) => {
     if (!("Notification" in window)) return;
-    
-    // Auto request permission if default
-    if (Notification.permission === 'default') {
-        await Notification.requestPermission();
-    }
-    
+    if (Notification.permission === 'default') await Notification.requestPermission();
     if (Notification.permission !== "granted") return;
     if (isDNDActive()) return;
 
-    // Use absolute URL from manifest for reliability
     const iconUrl = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
+    const imageUrl = generateNotificationImage(title);
 
-    let swError: any = null;
+    // Actions
+    const actions: any[] = [];
+    if (isAlarm || habitId) {
+        actions.push({ action: 'complete', title: '✅ Complete' });
+        actions.push({ action: 'dismiss', title: 'Stop' });
+    } else {
+        actions.push({ action: 'dismiss', title: 'Dismiss' });
+    }
 
-    // Try Service Worker first (Required for Android Background)
+    const options: any = {
+        body,
+        icon: iconUrl,
+        badge: iconUrl, // Small icon for status bar
+        image: imageUrl, // Large Banner Image
+        vibrate: [500, 250, 500, 250], // Heartbeat
+        tag: isAlarm ? 'alarm-' + Date.now() : 'notification-' + (habitId || 'general'),
+        renotify: true, // Alert even if replacing old notification
+        requireInteraction: true, // Keeps it on screen until user interacts
+        silent: false,
+        data: {
+            url: window.location.href,
+            habitId: habitId
+        },
+        actions: actions
+    };
+
     if ('serviceWorker' in navigator) {
         try {
-            // Get existing registration (more reliable than ready in some contexts)
             let reg = await navigator.serviceWorker.getRegistration();
-            if (!reg) {
-                // If not found, wait for ready
-                 reg = await navigator.serviceWorker.ready;
-            }
-
+            if (!reg) reg = await navigator.serviceWorker.ready;
             if (reg) {
-                await reg.showNotification(title, {
-                    body,
-                    icon: iconUrl,
-                    badge: iconUrl,
-                    vibrate: [200, 100, 200, 100, 200, 100, 200],
-                    tag: isAlarm ? 'alarm-' + Date.now() : 'notification-' + Date.now(),
-                    renotify: true,
-                    requireInteraction: isAlarm,
-                    data: {
-                        url: window.location.href,
-                        habitId: habitId
-                    },
-                    actions: isAlarm 
-                        ? [
-                            { action: 'complete', title: 'Complete' },
-                            { action: 'dismiss', title: 'Stop Alarm' }
-                          ]
-                        : [
-                            { action: 'dismiss', title: 'Dismiss' }
-                          ]
-                } as any);
+                await reg.showNotification(title, options);
                 return;
             }
         } catch (e) {
-            console.warn("SW Notification failed, using fallback logic", e);
-            swError = e;
+            console.warn("SW notify failed", e);
         }
     }
     
-    // Fallback to Main Thread (Unreliable on Android Background, but better than nothing)
     try {
-        new Notification(title, { body, icon: iconUrl });
+        new Notification(title, options);
     } catch (e) {
-        console.error("Fallback notification failed", e);
-        const errStr = e instanceof Error ? e.message : String(e);
-        const swErrStr = swError ? (swError instanceof Error ? swError.message : String(swError)) : 'N/A';
-        onNotify("Notification Error", `SW: ${swErrStr} | Main: ${errStr}`);
+        console.error("Fallback notify failed", e);
+        onNotify("Notification Error", "Could not display notification.");
     }
   };
 
-  // Helper: Check if DND is active
   const isDNDActive = () => {
      const { dndStartTime, dndEndTime } = state.user;
      if (!dndStartTime || !dndEndTime) return false;
@@ -302,33 +309,23 @@ const NotificationManager: React.FC<{
      const startTotal = startH * 60 + startM;
      const endTotal = endH * 60 + endM;
 
-     // Case 1: Start < End (e.g. 10:00 to 14:00)
      if (startTotal < endTotal) {
          return currentMinutes >= startTotal && currentMinutes < endTotal;
-     } 
-     // Case 2: Start > End (Overnight, e.g. 23:00 to 07:00)
-     else {
+     } else {
          return currentMinutes >= startTotal || currentMinutes < endTotal;
      }
   };
 
   useEffect(() => {
     const checkReminders = () => {
-      // DND Check
       if (isDNDActive()) return;
 
       const now = new Date();
-      // const currentHours = now.getHours().toString().padStart(2, '0');
-      // const currentMinutes = now.getMinutes().toString().padStart(2, '0');
-      // const currentTimeStr = `${currentHours}:${currentMinutes}`;
-      
       const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
       const today = getTodayStr();
 
-      // Skip if we already checked this minute (prevents double firing if interval runs fast)
-      // HOWEVER, if the drift was huge (phone slept), we must process.
-      // Logic: If currentTotalMinutes == lastChecked, do nothing.
-      // If currentTotalMinutes > lastChecked, we check.
+      // If just loaded (lastChecked == current), skip firing immediately
+      // unless we want to process missed events. For simplicity, we skip exact matches.
       if (currentTotalMinutes === lastCheckedTotalMinutes.current) return;
 
       let alarmTriggered = false;
@@ -341,13 +338,10 @@ const NotificationManager: React.FC<{
         let shouldNotify = false;
         let isDailyAlarm = false;
 
-        // Daily Alarm Logic (Fixed Time)
-        // We check if the reminderTime falls between lastChecked and now
+        // 1. Daily Alarm (Fixed Time)
         if (habit.reminderTime) {
            const [remH, remM] = habit.reminderTime.split(':').map(Number);
            const remTotal = remH * 60 + remM;
-           
-           // If the reminder time was passed since the last check
            if (remTotal > lastCheckedTotalMinutes.current && remTotal <= currentTotalMinutes) {
                shouldNotify = true;
                isDailyAlarm = true;
@@ -357,16 +351,12 @@ const NotificationManager: React.FC<{
            }
         }
 
-        // Interval Logic (Repeated)
-        // Improved to handle drift: Check if we crossed a multiple of the interval
+        // 2. Interval Logic (Periodic)
         if (!shouldNotify && habit.reminderInterval && habit.reminderInterval > 0) {
            const interval = habit.reminderInterval;
-           // Calculate how many intervals had passed up to the last check
            const lastStep = Math.floor(lastCheckedTotalMinutes.current / interval);
-           // Calculate how many intervals have passed up to now
            const currentStep = Math.floor(currentTotalMinutes / interval);
            
-           // If we jumped to a new step, it means an interval boundary was crossed
            if (currentStep > lastStep) {
              const val = state.logs[today]?.[habit.id];
              const isDone = habit.type === 'checkbox' ? !!val : (val as number || 0) >= (habit.target || 1);
@@ -376,6 +366,17 @@ const NotificationManager: React.FC<{
                 notificationTitle = `Reminder: ${habit.name}`;
                 notificationBody = `Keep the streak alive!`;
                 alarmHabitId = habit.id; 
+                
+                // Try to schedule the NEXT one immediately for background resilience
+                // Calculate next interval time
+                const nextIntervalMinutes = (currentStep + 1) * interval;
+                const nextDate = new Date();
+                nextDate.setHours(Math.floor(nextIntervalMinutes / 60));
+                nextDate.setMinutes(nextIntervalMinutes % 60);
+                nextDate.setSeconds(0);
+                if (nextDate.getTime() > Date.now()) {
+                    scheduleNotification(notificationTitle, notificationBody, nextDate.getTime(), `interval-${habit.id}-${currentStep+1}`);
+                }
              }
            }
         }
@@ -398,10 +399,8 @@ const NotificationManager: React.FC<{
       lastCheckedTotalMinutes.current = currentTotalMinutes;
     };
 
-    // Run check more frequently (every 5 seconds) to catch wake-ups quickly
     const interval = setInterval(checkReminders, 5000); 
 
-    // Trigger check immediately on visibility change (User unlocks phone)
     const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
             checkReminders();

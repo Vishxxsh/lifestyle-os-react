@@ -12,7 +12,6 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-          console.log('Opened cache');
           // CRITICAL: Catch errors here so SW installs even if a file fails to load
           return cache.addAll(PRECACHE_URLS).catch(err => {
               console.warn('SW Precache warning (non-fatal):', err);
@@ -28,7 +27,6 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Clearing old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })

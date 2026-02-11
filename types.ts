@@ -72,7 +72,7 @@ export interface UserState {
   chimeDuration: number; // seconds
   soundType: SoundType;
   // DND Config
-  dndStartTime?: string; // "22:00"
+  dndStartTime?: string; // "23:00"
   dndEndTime?: string;   // "07:00"
 }
 

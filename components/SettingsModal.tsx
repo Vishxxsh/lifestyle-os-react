@@ -57,19 +57,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 try {
                     reg = await navigator.serviceWorker.getRegistration();
                 } catch(e) {
-                    console.warn("Could not get registration directly", e);
                     swError = e;
                 }
 
                 // SELF-HEALING: If no registration, try to force register immediately
                 if (!reg) {
-                    console.log("No SW found, attempting immediate registration...");
                     try {
                         reg = await navigator.serviceWorker.register('/sw.js');
                         // Small delay to let it settle
                         await new Promise(resolve => setTimeout(resolve, 500));
                     } catch (regErr) {
-                        console.error("Immediate registration failed", regErr);
                         swError = swError || regErr;
                     }
                 }
@@ -83,7 +80,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         );
                         reg = await Promise.race([swPromise, timeoutPromise]) as ServiceWorkerRegistration;
                     } catch(e) {
-                        console.warn("SW Ready timed out", e);
                         swError = swError || e;
                     }
                 }
@@ -102,7 +98,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 swError = new Error("No Service Worker Registration found even after self-healing.");
             }
         } catch (e) {
-            console.warn("SW notification failed, trying fallback:", e);
             swError = e;
         }
         
@@ -111,7 +106,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         try {
             new Notification(title, { body, icon });
         } catch (e) {
-            console.error("Standard notification failed", e);
             const err1 = swError instanceof Error ? swError.message : String(swError);
             const err2 = e instanceof Error ? e.message : String(e);
             alert(`Notification Failed.\n\nSW Error: ${err1}\n\nFallback Error: ${err2}\n\nNote: Android requires the Service Worker. We attempted to re-register it. Please refresh the page and try again.`);
