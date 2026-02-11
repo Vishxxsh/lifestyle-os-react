@@ -47,6 +47,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         const body = "If you see this, your notifications are working perfectly!";
         const icon = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
 
+        let swError: any = null;
+
         try {
             // Try getting existing registration first (Fastest/Most Reliable)
             let reg: ServiceWorkerRegistration | undefined;
@@ -56,6 +58,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     reg = await navigator.serviceWorker.getRegistration();
                 } catch(e) {
                     console.warn("Could not get registration directly", e);
+                    swError = e;
                 }
 
                 // If no registration found, try waiting for ready (Initial load case)
@@ -63,11 +66,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     try {
                         const swPromise = navigator.serviceWorker.ready;
                         const timeoutPromise = new Promise<never>((_, reject) => 
-                            setTimeout(() => reject(new Error("SW Ready Timeout")), 2000)
+                            setTimeout(() => reject(new Error("SW Ready Timeout (2s)")), 2000)
                         );
                         reg = await Promise.race([swPromise, timeoutPromise]) as ServiceWorkerRegistration;
                     } catch(e) {
                         console.warn("SW Ready timed out", e);
+                        swError = swError || e;
                     }
                 }
             }
@@ -80,9 +84,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     vibrate: [200, 100, 200]
                 } as any);
                 return;
+            } else if (!swError) {
+                swError = new Error("No Service Worker Registration found.");
             }
         } catch (e) {
             console.warn("SW notification failed, trying fallback:", e);
+            swError = e;
         }
         
         // Fallback to standard Notification API (Likely to fail on Android if SW failed, but worth a shot)
@@ -90,7 +97,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             new Notification(title, { body, icon });
         } catch (e) {
             console.error("Standard notification failed", e);
-            alert("Notification failed. \n\n1. Check if 'Do Not Disturb' is on.\n2. Ensure battery saver is off for this browser.\n3. Reset site permissions.");
+            const err1 = swError instanceof Error ? swError.message : String(swError);
+            const err2 = e instanceof Error ? e.message : String(e);
+            alert(`Notification Failed.\n\nSW Error: ${err1}\n\nFallback Error: ${err2}\n\nCommon Fixes:\n1. Check 'Do Not Disturb'\n2. Allow Notifications in Browser Settings\n3. Check Battery Saver`);
         }
     };
 

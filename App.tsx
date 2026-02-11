@@ -236,6 +236,8 @@ const NotificationManager: React.FC<{
     // Use absolute URL from manifest for reliability
     const iconUrl = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
 
+    let swError: any = null;
+
     // Try Service Worker first (Required for Android Background)
     if ('serviceWorker' in navigator) {
         try {
@@ -272,6 +274,7 @@ const NotificationManager: React.FC<{
             }
         } catch (e) {
             console.warn("SW Notification failed, using fallback logic", e);
+            swError = e;
         }
     }
     
@@ -280,6 +283,9 @@ const NotificationManager: React.FC<{
         new Notification(title, { body, icon: iconUrl });
     } catch (e) {
         console.error("Fallback notification failed", e);
+        const errStr = e instanceof Error ? e.message : String(e);
+        const swErrStr = swError ? (swError instanceof Error ? swError.message : String(swError)) : 'N/A';
+        onNotify("Notification Error", `SW: ${swErrStr} | Main: ${errStr}`);
     }
   };
 
