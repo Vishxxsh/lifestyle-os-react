@@ -143,8 +143,8 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
           </button>
       </div>
 
-      {/* Macro Dashboard */}
-      <div className="flex gap-4 sticky top-0 z-10 bg-white dark:bg-gray-900 pb-2 pt-2">
+      {/* Macro Dashboard - Sticky Header */}
+      <div className="flex gap-4 sticky top-0 z-10 bg-[#F2F2F7]/95 dark:bg-black/95 backdrop-blur-md pb-2 pt-2 transition-colors duration-500">
         <button 
             onClick={openTargetModal}
             className={`flex-1 ${inColor} text-white p-4 rounded-2xl shadow-lg relative overflow-hidden transition-colors text-left group`}

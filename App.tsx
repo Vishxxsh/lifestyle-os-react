@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TabHome } from './components/TabHome';
@@ -18,16 +19,16 @@ const Toast: React.FC<{ title: string; message: string; onClose: () => void }> =
   }, [onClose]);
 
   return (
-    <div className="fixed top-6 left-6 right-6 z-[100] bg-gray-900 dark:bg-white text-white dark:text-gray-900 p-4 rounded-2xl shadow-2xl flex items-start gap-3 transform transition-all animate-[slideIn_0.3s_ease-out]">
-      <div className="p-2 bg-white/10 dark:bg-black/10 rounded-full shrink-0">
+    <div className="fixed top-6 left-4 right-4 z-[100] glass border border-white/20 dark:border-white/10 text-gray-900 dark:text-white p-4 rounded-3xl shadow-ios-lg flex items-start gap-3 transform transition-all animate-[slideIn_0.4s_cubic-bezier(0.175,0.885,0.32,1.275)]">
+      <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-full shrink-0">
         <Bell size={20} />
       </div>
-      <div className="flex-1 min-w-0">
-        <h4 className="font-bold text-sm">{title}</h4>
-        <p className="text-xs text-gray-300 dark:text-gray-600 mt-1">{message}</p>
+      <div className="flex-1 min-w-0 pt-1">
+        <h4 className="font-bold text-sm tracking-tight">{title}</h4>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{message}</p>
       </div>
-      <button onClick={onClose} className="text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-black">
-        <X size={16} />
+      <button onClick={onClose} className="text-gray-400 hover:text-gray-900 dark:hover:text-white p-1">
+        <X size={18} />
       </button>
     </div>
   );
@@ -36,28 +37,28 @@ const Toast: React.FC<{ title: string; message: string; onClose: () => void }> =
 // Full Screen Alarm Overlay
 const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => void; onComplete?: () => void }> = ({ title, body, onDismiss, onComplete }) => {
     return (
-        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-white animate-fade-in">
-            <div className="animate-bounce mb-8">
+        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-white animate-fade-in">
+            <div className="animate-bounce mb-8 p-6 bg-red-500/20 rounded-full">
                 <AlarmClock size={64} className="text-red-500" />
             </div>
-            <h2 className="text-3xl font-black mb-2 text-center">{title}</h2>
-            <p className="text-gray-300 mb-12 text-center text-lg">{body}</p>
+            <h2 className="text-4xl font-black mb-4 text-center tracking-tight">{title}</h2>
+            <p className="text-gray-300 mb-16 text-center text-xl font-medium">{body}</p>
             
             <div className="w-full max-w-sm space-y-4">
                 {onComplete && (
                     <button 
                         onClick={onComplete}
-                        className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xl rounded-2xl shadow-[0_0_30px_rgba(16,185,129,0.3)] active:scale-95 transition-all flex items-center justify-center gap-3"
+                        className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-lg rounded-3xl shadow-glow active:scale-95 transition-all flex items-center justify-center gap-3"
                     >
                         <CheckSquare size={24} strokeWidth={3} />
-                        I DID IT!
+                        I DID IT
                     </button>
                 )}
                 <button 
                     onClick={onDismiss}
-                    className="w-full py-5 bg-white text-black font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform"
+                    className="w-full py-5 bg-white/10 backdrop-blur-md hover:bg-white/20 text-white font-bold text-lg rounded-3xl active:scale-95 transition-transform"
                 >
-                    STOP ALARM
+                    SNOOZE / STOP
                 </button>
             </div>
         </div>
@@ -93,13 +94,59 @@ const generateNotificationImage = (text: string) => {
     return canvas.toDataURL('image/png');
 };
 
+// --- Background Audio Keeper ---
+// Short silent MP3 to keep the audio session active
+const SILENT_AUDIO_URL = 'data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+
+const BackgroundAudioKeeper = () => {
+    const { state } = useApp();
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        if (!audioRef.current) {
+            audioRef.current = new Audio(SILENT_AUDIO_URL);
+            audioRef.current.loop = true;
+            // Set volume to almost 0 but not exactly 0 to ensure some browsers don't optimize it away
+            audioRef.current.volume = 0.01; 
+        }
+
+        const audio = audioRef.current;
+
+        if (state.user.backgroundKeepAlive) {
+            // Attempt to play
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.log("Auto-play prevented. Interaction required.");
+                    // Add a one-time document click listener to start it if autoplay failed
+                    const startAudio = () => {
+                        audio.play().catch(e => console.error("Retry play failed", e));
+                        document.removeEventListener('click', startAudio);
+                        document.removeEventListener('touchstart', startAudio);
+                    };
+                    document.addEventListener('click', startAudio);
+                    document.addEventListener('touchstart', startAudio);
+                });
+            }
+        } else {
+            audio.pause();
+        }
+
+        return () => {
+            audio.pause();
+        }
+    }, [state.user.backgroundKeepAlive]);
+
+    return null;
+}
+
 // Component to handle background checks for notifications
 const NotificationManager: React.FC<{ 
     onNotify: (title: string, msg: string) => void,
-    onAlarmStart: (title: string, msg: string, habitId?: number) => void
+    onAlarmStart: (title: string, msg: string, id?: number, type?: 'habit' | 'todo') => void
     alarmDismissSignal: number 
     onRemoteDismiss: () => void;
-    onRemoteComplete: (habitId: number) => void;
+    onRemoteComplete: (id: number, type: 'habit' | 'todo') => void;
 }> = ({ onNotify, onAlarmStart, alarmDismissSignal, onRemoteDismiss, onRemoteComplete }) => {
   const { state } = useApp();
   const lastCheckedTotalMinutes = useRef<number>(new Date().getHours() * 60 + new Date().getMinutes());
@@ -116,7 +163,12 @@ const NotificationManager: React.FC<{
           } 
           else if (event.data.type === 'COMPLETE_HABIT') {
               if (event.data.habitId) {
-                  onRemoteComplete(parseInt(event.data.habitId));
+                  onRemoteComplete(parseInt(event.data.habitId), 'habit');
+              }
+          }
+          else if (event.data.type === 'COMPLETE_TODO') {
+              if (event.data.todoId) {
+                  onRemoteComplete(parseInt(event.data.todoId), 'todo');
               }
           }
       };
@@ -171,7 +223,7 @@ const NotificationManager: React.FC<{
       osc.connect(gain);
       gain.connect(ctx.destination);
       
-      // Sound Synthesis Logic (Same as before)
+      // Sound Synthesis Logic
       if (type === 'alarm') {
         if (soundType === 'classic') {
              osc.type = 'square';
@@ -218,10 +270,8 @@ const NotificationManager: React.FC<{
 
   const scheduleNotification = async (title: string, body: string, triggerTimestamp: number, tag: string) => {
       // Experimental: Timestamp Trigger for Background Delivery
-      // This is the only way to get true background notifications on Android PWA without a server.
       if ('serviceWorker' in navigator && 'showTrigger' in Notification.prototype) {
            const reg = await navigator.serviceWorker.ready;
-           // Check if we already scheduled this tag to avoid spamming the scheduler
            if (scheduledTriggers.current.has(tag)) return;
 
            try {
@@ -234,14 +284,13 @@ const NotificationManager: React.FC<{
                    data: { url: window.location.href }
                });
                scheduledTriggers.current.add(tag);
-               console.log(`Scheduled background notification for ${new Date(triggerTimestamp).toLocaleTimeString()}`);
            } catch(e) {
                console.warn("TimestampTrigger failed", e);
            }
       }
   };
 
-  const sendNotification = async (title: string, body: string, isAlarm: boolean, habitId?: number) => {
+  const sendNotification = async (title: string, body: string, isAlarm: boolean, id?: number, type?: 'habit' | 'todo') => {
     if (!("Notification" in window)) return;
     if (Notification.permission === 'default') await Notification.requestPermission();
     if (Notification.permission !== "granted") return;
@@ -250,9 +299,8 @@ const NotificationManager: React.FC<{
     const iconUrl = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
     const imageUrl = generateNotificationImage(title);
 
-    // Actions
     const actions: any[] = [];
-    if (isAlarm || habitId) {
+    if (isAlarm || id) {
         actions.push({ action: 'complete', title: '✅ Complete' });
         actions.push({ action: 'dismiss', title: 'Stop' });
     } else {
@@ -262,16 +310,17 @@ const NotificationManager: React.FC<{
     const options: any = {
         body,
         icon: iconUrl,
-        badge: iconUrl, // Small icon for status bar
-        image: imageUrl, // Large Banner Image
-        vibrate: [500, 250, 500, 250], // Heartbeat
-        tag: isAlarm ? 'alarm-' + Date.now() : 'notification-' + (habitId || 'general'),
-        renotify: true, // Alert even if replacing old notification
-        requireInteraction: true, // Keeps it on screen until user interacts
+        badge: iconUrl,
+        image: imageUrl,
+        vibrate: [500, 250, 500, 250],
+        tag: isAlarm ? 'alarm-' + Date.now() : 'notification-' + (id || 'general'),
+        renotify: true,
+        requireInteraction: true,
         silent: false,
         data: {
             url: window.location.href,
-            habitId: habitId
+            habitId: type === 'habit' ? id : undefined,
+            todoId: type === 'todo' ? id : undefined
         },
         actions: actions
     };
@@ -292,7 +341,6 @@ const NotificationManager: React.FC<{
     try {
         new Notification(title, options);
     } catch (e) {
-        console.error("Fallback notify failed", e);
         onNotify("Notification Error", "Could not display notification.");
     }
   };
@@ -324,21 +372,20 @@ const NotificationManager: React.FC<{
       const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
       const today = getTodayStr();
 
-      // If just loaded (lastChecked == current), skip firing immediately
-      // unless we want to process missed events. For simplicity, we skip exact matches.
       if (currentTotalMinutes === lastCheckedTotalMinutes.current) return;
 
       let alarmTriggered = false;
       let chimeTriggered = false;
       let notificationTitle = "";
       let notificationBody = "";
-      let alarmHabitId: number | undefined;
+      let alarmId: number | undefined;
+      let alarmType: 'habit' | 'todo' | undefined;
 
+      // 1. Check Habits
       state.habits.forEach(habit => {
         let shouldNotify = false;
         let isDailyAlarm = false;
 
-        // 1. Daily Alarm (Fixed Time)
         if (habit.reminderTime) {
            const [remH, remM] = habit.reminderTime.split(':').map(Number);
            const remTotal = remH * 60 + remM;
@@ -347,11 +394,11 @@ const NotificationManager: React.FC<{
                isDailyAlarm = true;
                notificationTitle = `Time for ${habit.name}`;
                notificationBody = `It's ${habit.reminderTime}. Let's get it done.`;
-               alarmHabitId = habit.id;
+               alarmId = habit.id;
+               alarmType = 'habit';
            }
         }
 
-        // 2. Interval Logic (Periodic)
         if (!shouldNotify && habit.reminderInterval && habit.reminderInterval > 0) {
            const interval = habit.reminderInterval;
            const lastStep = Math.floor(lastCheckedTotalMinutes.current / interval);
@@ -365,10 +412,9 @@ const NotificationManager: React.FC<{
                 shouldNotify = true;
                 notificationTitle = `Reminder: ${habit.name}`;
                 notificationBody = `Keep the streak alive!`;
-                alarmHabitId = habit.id; 
+                alarmId = habit.id; 
+                alarmType = 'habit';
                 
-                // Try to schedule the NEXT one immediately for background resilience
-                // Calculate next interval time
                 const nextIntervalMinutes = (currentStep + 1) * interval;
                 const nextDate = new Date();
                 nextDate.setHours(Math.floor(nextIntervalMinutes / 60));
@@ -384,13 +430,60 @@ const NotificationManager: React.FC<{
         if (shouldNotify) {
             if (isDailyAlarm) {
                 alarmTriggered = true;
-                onAlarmStart(notificationTitle, notificationBody, alarmHabitId);
+                onAlarmStart(notificationTitle, notificationBody, alarmId, alarmType);
             } else {
                 chimeTriggered = true;
                 onNotify(notificationTitle, notificationBody);
             }
-            sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmHabitId);
+            sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmId, alarmType);
         }
+      });
+
+      // 2. Check Todos
+      state.todos.forEach(todo => {
+          if (todo.done) return;
+
+          let shouldNotify = false;
+          let isDailyAlarm = false;
+
+          if (todo.reminderTime) {
+              const [tH, tM] = todo.reminderTime.split(':').map(Number);
+              const tTotal = tH * 60 + tM;
+
+              if (tTotal > lastCheckedTotalMinutes.current && tTotal <= currentTotalMinutes) {
+                  shouldNotify = true;
+                  isDailyAlarm = true;
+                  notificationTitle = "Mission Alert";
+                  notificationBody = todo.text;
+                  alarmId = todo.id;
+                  alarmType = 'todo';
+              }
+          }
+
+          if (!shouldNotify && todo.reminderInterval && todo.reminderInterval > 0) {
+               const interval = todo.reminderInterval;
+               const lastStep = Math.floor(lastCheckedTotalMinutes.current / interval);
+               const currentStep = Math.floor(currentTotalMinutes / interval);
+               
+               if (currentStep > lastStep) {
+                   shouldNotify = true;
+                   notificationTitle = "Mission Reminder";
+                   notificationBody = `Still pending: ${todo.text}`;
+                   alarmId = todo.id;
+                   alarmType = 'todo';
+               }
+          }
+
+          if (shouldNotify) {
+              if (isDailyAlarm) {
+                  alarmTriggered = true;
+                  onAlarmStart(notificationTitle, notificationBody, alarmId, alarmType);
+              } else {
+                  chimeTriggered = true;
+                  onNotify(notificationTitle, notificationBody);
+              }
+              sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmId, alarmType);
+          }
       });
 
       if (alarmTriggered) playSound('alarm');
@@ -412,19 +505,26 @@ const NotificationManager: React.FC<{
         clearInterval(interval);
         document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [state.habits, state.logs, onNotify, onAlarmStart, state.user]);
+  }, [state.habits, state.todos, state.logs, onNotify, onAlarmStart, state.user]);
 
   return null;
 };
 
+const TAB_ORDER = ['home', 'habits', 'meals', 'goals', 'reports'] as const;
+
 const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'home' | 'habits' | 'meals' | 'goals' | 'reports'>('home');
-  const { state, fabOnClick, toggleHabit } = useApp();
+  const { state, fabOnClick, toggleHabit, toggleTodo } = useApp();
   const [toast, setToast] = useState<{title: string, msg: string} | null>(null);
   
-  const [activeAlarm, setActiveAlarm] = useState<{title: string, msg: string, habitId?: number} | null>(null);
+  const [activeAlarm, setActiveAlarm] = useState<{title: string, msg: string, id?: number, type?: 'habit' | 'todo'} | null>(null);
   const [dismissSignal, setDismissSignal] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Swipe State
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const minSwipeDistance = 50;
 
   useEffect(() => {
     if (state.user.theme === 'dark') {
@@ -435,7 +535,7 @@ const AppContent: React.FC = () => {
   }, [state.user.theme]);
 
   const handleNotify = useCallback((title: string, msg: string) => setToast({ title, msg }), []);
-  const handleAlarmStart = useCallback((title: string, msg: string, habitId?: number) => setActiveAlarm({ title, msg, habitId }), []);
+  const handleAlarmStart = useCallback((title: string, msg: string, id?: number, type?: 'habit' | 'todo') => setActiveAlarm({ title, msg, id, type }), []);
 
   const handleDismissAlarm = useCallback(() => {
       setActiveAlarm(null);
@@ -443,18 +543,66 @@ const AppContent: React.FC = () => {
   }, []);
 
   const handleCompleteAlarm = useCallback(() => {
-      if (activeAlarm?.habitId) {
-          toggleHabit(activeAlarm.habitId, getTodayStr());
-          setToast({ title: "Awesome!", msg: "Habit completed. Keep it up!" });
+      if (activeAlarm?.id) {
+          if (activeAlarm.type === 'habit') {
+            toggleHabit(activeAlarm.id, getTodayStr());
+          } else if (activeAlarm.type === 'todo') {
+            toggleTodo(activeAlarm.id);
+          }
+          setToast({ title: "Awesome!", msg: "Completed. Keep it up!" });
       }
       handleDismissAlarm();
-  }, [activeAlarm, toggleHabit, handleDismissAlarm]);
+  }, [activeAlarm, toggleHabit, toggleTodo, handleDismissAlarm]);
 
-  const handleRemoteComplete = useCallback((habitId: number) => {
-      toggleHabit(habitId, getTodayStr());
+  const handleRemoteComplete = useCallback((id: number, type: 'habit' | 'todo') => {
+      if (type === 'habit') {
+        toggleHabit(id, getTodayStr());
+      } else if (type === 'todo') {
+        toggleTodo(id);
+      }
       setToast({ title: "Awesome!", msg: "Marked done via notification." });
       handleDismissAlarm();
-  }, [toggleHabit, handleDismissAlarm]);
+  }, [toggleHabit, toggleTodo, handleDismissAlarm]);
+
+  // Swipe Handlers
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null); 
+    setTouchStart(e.targetTouches[0].clientX);
+  }
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  }
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    
+    if (isLeftSwipe || isRightSwipe) {
+        const currIdx = TAB_ORDER.indexOf(activeTab);
+        if (isLeftSwipe && currIdx < TAB_ORDER.length - 1) {
+            setActiveTab(TAB_ORDER[currIdx + 1]);
+            triggerHaptic();
+        }
+        if (isRightSwipe && currIdx > 0) {
+            setActiveTab(TAB_ORDER[currIdx - 1]);
+            triggerHaptic();
+        }
+    }
+  }
+
+  const triggerHaptic = () => {
+      if (navigator.vibrate && state.user.vibrationEnabled) {
+          navigator.vibrate(10);
+      }
+  };
+
+  const switchTab = (tab: typeof activeTab) => {
+      setActiveTab(tab);
+      triggerHaptic();
+  };
 
   const openSettings = () => setIsSettingsOpen(true);
 
@@ -470,20 +618,18 @@ const AppContent: React.FC = () => {
 
   const NavItem = ({ id, icon: Icon, label }: { id: typeof activeTab, icon: any, label: string }) => (
     <button 
-      onClick={() => setActiveTab(id)}
-      className={`flex flex-col items-center justify-center flex-1 h-full space-y-1 transition-colors ${
-        activeTab === id 
-          ? 'text-gray-900 dark:text-white' 
-          : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-      }`}
+      onClick={() => switchTab(id)}
+      className={`relative flex flex-col items-center justify-center flex-1 h-full transition-all duration-300 group`}
     >
-      <Icon size={24} strokeWidth={activeTab === id ? 2.5 : 2} />
-      <span className="text-[10px] font-bold tracking-wide">{label}</span>
+      <div className={`transition-all duration-300 ${activeTab === id ? 'text-blue-500 dark:text-white scale-110' : 'text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-300'}`}>
+          <Icon size={26} strokeWidth={activeTab === id ? 2.5 : 2} />
+      </div>
     </button>
   );
 
   return (
-    <div className="max-w-md mx-auto h-[100dvh] bg-gray-50 dark:bg-gray-950 dark:text-gray-100 shadow-2xl overflow-hidden relative flex flex-col transition-colors duration-300">
+    <div className="mx-auto h-[100dvh] bg-[#F2F2F7] dark:bg-black overflow-hidden relative flex flex-col transition-colors duration-500">
+      <BackgroundAudioKeeper />
       <NotificationManager 
         onNotify={handleNotify} 
         onAlarmStart={handleAlarmStart}
@@ -497,7 +643,7 @@ const AppContent: React.FC = () => {
             title={activeAlarm.title} 
             body={activeAlarm.msg} 
             onDismiss={handleDismissAlarm}
-            onComplete={activeAlarm.habitId ? handleCompleteAlarm : undefined}
+            onComplete={activeAlarm.id ? handleCompleteAlarm : undefined}
           />
       )}
 
@@ -511,28 +657,39 @@ const AppContent: React.FC = () => {
         />
       )}
       
-      <main className="flex-1 overflow-y-auto no-scrollbar p-6">
-        <div className="fade-enter-active">
+      <main 
+        className="flex-1 overflow-y-auto no-scrollbar max-w-md mx-auto w-full p-4 sm:p-6 pb-28 tab-content"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        <div key={activeTab} className="tab-content">
            {renderTab()}
         </div>
       </main>
 
       {fabOnClick && (
-        <button 
-          onClick={fabOnClick}
-          className="absolute bottom-24 right-6 w-14 h-14 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-40"
-        >
-          <Plus size={28} />
-        </button>
+        <div className="fixed bottom-28 right-6 max-w-md mx-auto w-full pointer-events-none flex justify-end z-40">
+            <button 
+            onClick={fabOnClick}
+            className="pointer-events-auto w-16 h-16 bg-blue-600 text-white rounded-[2rem] shadow-glow flex items-center justify-center hover:scale-105 active:scale-90 transition-all duration-300"
+            style={{ marginRight: 'calc(max(0px, (100vw - 28rem) / 2))' }}
+            >
+            <Plus size={32} strokeWidth={2.5} />
+            </button>
+        </div>
       )}
 
-      <nav className="h-[80px] bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between px-2 pb-4 z-40 absolute bottom-0 w-full transition-colors duration-300">
-        <NavItem id="home" icon={Home} label="Home" />
-        <NavItem id="habits" icon={CheckSquare} label="Habits" />
-        <NavItem id="meals" icon={Utensils} label="Meals" />
-        <NavItem id="goals" icon={Target} label="Goals" />
-        <NavItem id="reports" icon={BarChart3} label="Reports" />
-      </nav>
+      {/* Floating Glass Navigation */}
+      <div className="fixed bottom-8 left-4 right-4 z-50 flex justify-center pointer-events-none">
+          <nav className="pointer-events-auto w-full max-w-[22rem] h-[72px] glass border border-white/40 dark:border-white/10 rounded-[2.5rem] shadow-ios-lg flex items-center justify-between px-6">
+            <NavItem id="home" icon={Home} label="Home" />
+            <NavItem id="habits" icon={CheckSquare} label="Habits" />
+            <NavItem id="meals" icon={Utensils} label="Meals" />
+            <NavItem id="goals" icon={Target} label="Goals" />
+            <NavItem id="reports" icon={BarChart3} label="Reports" />
+          </nav>
+      </div>
     </div>
   );
 };

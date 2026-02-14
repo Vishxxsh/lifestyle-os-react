@@ -20,9 +20,11 @@ interface AppContextType {
   updateCategory: (id: string, name: string, color: string) => void;
   deleteCategory: (id: string) => void;
 
-  addTodo: (text: string) => void;
+  addTodo: (text: string, color?: string) => void;
   toggleTodo: (id: number) => void;
   deleteTodo: (id: number) => void;
+  moveTodo: (activeId: number, overId: number) => void;
+  updateTodo: (id: number, updates: Partial<Todo>) => void;
   
   addMeal: (name: string, calories: number, protein: number, date: string) => void;
   deleteMeal: (id: number, date: string) => void;
@@ -56,54 +58,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loaded, setLoaded] = useState(false);
   const [fabOnClick, setFabAction] = useState<(() => void) | null>(null);
 
+  // Central Migration Logic
+  // This ensures that whether we load from LocalStorage OR Import a file, 
+  // the data is always upgraded to match the current app structure.
+  const migrateData = (data: any): AppState => {
+      // 1. Merge User Config with Defaults to handle missing keys
+      const mergedUser = { ...INITIAL_STATE.user, ...(data.user || {}) };
+      
+      // 2. Create Base State
+      const newState: AppState = {
+          ...INITIAL_STATE,
+          ...data, // Overwrite with imported data
+          user: mergedUser,
+          // Ensure Arrays/Objects exist
+          categories: data.categories || INITIAL_STATE.categories,
+          dayScores: data.dayScores || {},
+          logs: data.logs || {},
+          meals: data.meals || {},
+          workouts: data.workouts || {},
+          foodHistory: data.foodHistory || {},
+          goals: data.goals || [],
+          todos: data.todos || [],
+          habits: data.habits || [],
+          vision: data.vision || ""
+      };
+
+      // 3. Category Migrations
+      if (newState.categories.length === 0) {
+          newState.categories = INITIAL_STATE.categories;
+      }
+
+      // 4. Habit Migrations
+      newState.habits = newState.habits.map((h: any) => ({
+          ...h,
+          // Handle legacy field names if any
+          categoryId: h.categoryId || h.category,
+          frequency: h.frequency || 'daily',
+          frequencyGoal: h.frequencyGoal || 1,
+          unit: h.unit || (h.type === 'numeric' ? 'units' : undefined),
+          isCalorieBurner: h.isCalorieBurner || false,
+          // Ensure ID is a number (legacy might be string)
+          id: Number(h.id)
+      }));
+
+      // 5. Specific User Settings Migrations
+      if (newState.user.backgroundKeepAlive === undefined) newState.user.backgroundKeepAlive = false;
+      
+      if (!newState.user.proteinTarget) newState.user.proteinTarget = 150;
+
+      // Calorie Targets
+      if (!newState.user.caloriesInTarget) newState.user.caloriesInTarget = 2000;
+      if (!newState.user.caloriesOutTarget) newState.user.caloriesOutTarget = 500;
+      if (!newState.user.netCaloriesTarget) newState.user.netCaloriesTarget = 1500;
+
+      // Sound
+      if (newState.user.alarmDuration === undefined) newState.user.alarmDuration = 30;
+      if (newState.user.chimeDuration === undefined) newState.user.chimeDuration = 5;
+      if (!newState.user.soundType) newState.user.soundType = 'modern';
+
+      // DND
+      if (!newState.user.dndStartTime) newState.user.dndStartTime = "23:00";
+      if (!newState.user.dndEndTime) newState.user.dndEndTime = "07:00";
+
+      return newState;
+  };
+
   // Load from local storage on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        
-        // MIGRATIONS
-        if (!parsed.categories || parsed.categories.length === 0) {
-          parsed.categories = INITIAL_STATE.categories;
-        }
-        if (!parsed.dayScores) parsed.dayScores = {};
-
-        if (parsed.habits) {
-            parsed.habits = parsed.habits.map((h: any) => ({
-                ...h,
-                categoryId: h.categoryId || h.category,
-                frequency: h.frequency || 'daily',
-                frequencyGoal: h.frequencyGoal || 1,
-                unit: h.unit || (h.type === 'numeric' ? 'units' : undefined),
-                isCalorieBurner: h.isCalorieBurner || false
-            }));
-        }
-
-        if (!parsed.workouts) parsed.workouts = {};
-        if (!parsed.goals) parsed.goals = [];
-        
-        // Settings Migration
-        if (!parsed.user.theme) parsed.user.theme = 'light';
-        if (parsed.user.soundEnabled === undefined) parsed.user.soundEnabled = true;
-        if (parsed.user.vibrationEnabled === undefined) parsed.user.vibrationEnabled = true;
-        if (!parsed.user.proteinTarget) parsed.user.proteinTarget = 150;
-
-        // Calorie Targets Migration
-        if (!parsed.user.caloriesInTarget) parsed.user.caloriesInTarget = 2000;
-        if (!parsed.user.caloriesOutTarget) parsed.user.caloriesOutTarget = 500;
-        if (!parsed.user.netCaloriesTarget) parsed.user.netCaloriesTarget = 1500;
-
-        // New Sound Config Migrations
-        if (parsed.user.alarmDuration === undefined) parsed.user.alarmDuration = 30;
-        if (parsed.user.chimeDuration === undefined) parsed.user.chimeDuration = 5;
-        if (!parsed.user.soundType) parsed.user.soundType = 'modern';
-
-        // DND Migration
-        if (!parsed.user.dndStartTime) parsed.user.dndStartTime = "23:00";
-        if (!parsed.user.dndEndTime) parsed.user.dndEndTime = "07:00";
-
-        setState(parsed);
+        const migrated = migrateData(parsed);
+        setState(migrated);
       }
     } catch (e) {
       console.error("Failed to load state", e);
@@ -413,10 +440,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // --- Todos ---
-  const addTodo = (text: string) => {
+  const addTodo = (text: string, color: string = 'slate') => {
     setState(prev => ({
       ...prev,
-      todos: [{ id: Date.now(), text, done: false }, ...prev.todos]
+      todos: [{ id: Date.now(), text, done: false, color }, ...prev.todos]
     }));
   };
 
@@ -432,6 +459,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev,
       todos: prev.todos.filter(t => String(t.id) !== String(id))
     }));
+  };
+
+  const moveTodo = (activeId: number, overId: number) => {
+    setState(prev => {
+       const oldIndex = prev.todos.findIndex(t => t.id === activeId);
+       const newIndex = prev.todos.findIndex(t => t.id === overId);
+       if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
+
+       const newTodos = [...prev.todos];
+       const [moved] = newTodos.splice(oldIndex, 1);
+       newTodos.splice(newIndex, 0, moved);
+
+       return { ...prev, todos: newTodos };
+    });
+  };
+
+  const updateTodo = (id: number, updates: Partial<Todo>) => {
+      setState(prev => ({
+          ...prev,
+          todos: prev.todos.map(t => t.id === id ? { ...t, ...updates } : t)
+      }));
   };
 
   // --- Meals ---
@@ -528,15 +576,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const importData = (jsonStr: string): boolean => {
       try {
           const parsed = JSON.parse(jsonStr);
-          if (!parsed.user || !parsed.habits) {
+          // Basic validation to ensure it's at least an object
+          if (!parsed || typeof parsed !== 'object') {
               alert("Invalid backup file format.");
               return false;
           }
-          setState(parsed);
+          
+          // Run migration to fill in any missing gaps from old versions
+          const migratedData = migrateData(parsed);
+          
+          setState(migratedData);
+          
+          // Force save to persistence layer immediately
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedData));
+          
           return true;
       } catch (e) {
           console.error(e);
-          alert("Failed to parse file.");
+          alert("Failed to parse file. Please check the export file.");
           return false;
       }
   };
@@ -564,6 +621,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addTodo,
       toggleTodo,
       deleteTodo,
+      moveTodo,
+      updateTodo,
       addMeal,
       deleteMeal,
       addWorkout,

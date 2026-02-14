@@ -29,6 +29,9 @@ export interface Todo {
   id: number;
   text: string;
   done: boolean;
+  color?: string; // New: Color coding for priorities/categories
+  reminderTime?: string; // Optional reminder time "HH:MM"
+  reminderInterval?: number; // Optional reminder interval in minutes
 }
 
 export interface Meal {
@@ -55,6 +58,11 @@ export interface Goal {
 export type SoundType = 'modern' | 'classic' | 'retro';
 
 export interface UserState {
+  // Profile
+  name: string;
+  age: number;
+  weight: number; // in kg
+
   xp: number;
   level: number;
   proteinTarget: number; // Daily protein target in grams
@@ -65,8 +73,11 @@ export interface UserState {
   netCaloriesTarget: number;
 
   theme: 'light' | 'dark';
+  accentColor: string; // e.g. 'blue', 'violet'
   soundEnabled: boolean;
   vibrationEnabled: boolean;
+  backgroundKeepAlive: boolean; // Plays silent audio to keep app running
+
   // Sound Config
   alarmDuration: number; // seconds
   chimeDuration: number; // seconds
@@ -102,15 +113,20 @@ export interface AppState {
 
 export const INITIAL_STATE: AppState = {
   user: { 
+      name: "Guest",
+      age: 25,
+      weight: 70,
       xp: 0, 
       level: 1, 
       proteinTarget: 150,
       caloriesInTarget: 2000,
       caloriesOutTarget: 500,
       netCaloriesTarget: 1500, 
-      theme: 'light', 
+      theme: 'light',
+      accentColor: 'blue',
       soundEnabled: true, 
       vibrationEnabled: true,
+      backgroundKeepAlive: false,
       alarmDuration: 30,
       chimeDuration: 5,
       soundType: 'modern',

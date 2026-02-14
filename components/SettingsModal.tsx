@@ -2,7 +2,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Modal } from './Modal';
-import { Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, Smartphone, SmartphoneNfc, Music, Clock, MoonStar, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { 
+    Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, 
+    Smartphone, SmartphoneNfc, Music, Clock, MoonStar, CheckCircle2, 
+    AlertCircle, RefreshCw, ChevronRight, ChevronLeft, User, Database, 
+    Palette, ArrowLeft, Battery, BatteryCharging
+} from 'lucide-react';
 import { SoundType } from '../types';
 
 interface SettingsModalProps {
@@ -10,11 +15,19 @@ interface SettingsModalProps {
     onClose: () => void;
 }
 
+type SettingsView = 'main' | 'profile' | 'themes' | 'sounds' | 'notifications' | 'datavault';
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     const { state, updateUserConfig, resetData, importData, recalculateXP } = useApp();
+    const [currentView, setCurrentView] = useState<SettingsView>('main');
     const [importStatus, setImportStatus] = useState<string>("");
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
+
+    // Reset view on open
+    useEffect(() => {
+        if (isOpen) setCurrentView('main');
+    }, [isOpen]);
 
     useEffect(() => {
         if ('Notification' in window) {
@@ -50,88 +63,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         let swError: any = null;
 
         try {
-            // 1. Try getting existing registration
             let reg: ServiceWorkerRegistration | undefined;
-            
             if ('serviceWorker' in navigator) {
-                try {
-                    reg = await navigator.serviceWorker.getRegistration();
-                } catch(e) {
-                    swError = e;
-                }
-
-                // SELF-HEALING: If no registration, try to force register immediately
+                reg = await navigator.serviceWorker.getRegistration();
                 if (!reg) {
                     try {
                         reg = await navigator.serviceWorker.register('/sw.js');
-                        // Small delay to let it settle
                         await new Promise(resolve => setTimeout(resolve, 500));
                     } catch (regErr) {
                         swError = swError || regErr;
                     }
                 }
-
-                // If still no registration, try waiting for ready (fallback for initial load race conditions)
-                if (!reg) {
-                    try {
-                        const swPromise = navigator.serviceWorker.ready;
-                        const timeoutPromise = new Promise<never>((_, reject) => 
-                            setTimeout(() => reject(new Error("SW Ready Timeout (2s)")), 2000)
-                        );
-                        reg = await Promise.race([swPromise, timeoutPromise]) as ServiceWorkerRegistration;
-                    } catch(e) {
-                        swError = swError || e;
-                    }
-                }
             }
 
-            // 2. If we have a registration, use it (Required for Android)
             if (reg) {
-                await reg.showNotification(title, {
-                    body,
-                    icon,
-                    badge: icon,
-                    vibrate: [200, 100, 200]
-                } as any);
+                await reg.showNotification(title, { body, icon, badge: icon, vibrate: [200, 100, 200] } as any);
                 return;
-            } else if (!swError) {
-                swError = new Error("No Service Worker Registration found even after self-healing.");
-            }
+            } 
         } catch (e) {
             swError = e;
         }
         
-        // 3. Fallback to standard Notification API
-        // Note: This WILL fail on Android/PWA usually with "Illegal constructor", but acts as a final hail mary for Desktop.
         try {
             new Notification(title, { body, icon });
         } catch (e) {
-            const err1 = swError instanceof Error ? swError.message : String(swError);
-            const err2 = e instanceof Error ? e.message : String(e);
-            alert(`Notification Failed.\n\nSW Error: ${err1}\n\nFallback Error: ${err2}\n\nNote: Android requires the Service Worker. We attempted to re-register it. Please refresh the page and try again.`);
+            alert("Notification Failed. Check permissions.");
         }
-    };
-
-    const toggleTheme = () => {
-        updateUserConfig({ theme: state.user.theme === 'light' ? 'dark' : 'light' });
-    };
-
-    const toggleSound = () => {
-        updateUserConfig({ soundEnabled: !state.user.soundEnabled });
-    };
-
-    const toggleVibration = () => {
-        updateUserConfig({ vibrationEnabled: !state.user.vibrationEnabled });
-    };
-
-    const handleExport = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", `lifestyle_os_backup_${new Date().toISOString().split('T')[0]}.json`);
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
     };
 
     const handleImportClick = () => {
@@ -152,254 +109,368 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             }
         };
         reader.readAsText(file);
-        
-        // Reset input so same file can be selected again if needed
         e.target.value = '';
     };
 
-    const handleRecalculate = () => {
-        if (confirm("Recalculate total XP based on current habit values?")) {
-            recalculateXP();
-            alert("XP Recalculated Successfully.");
-        }
-    };
-
-    const handleNuke = () => {
-        if (confirm("Are you sure? This will wipe everything permanently.")) {
-            resetData();
-            onClose();
-        }
+    const handleExport = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", `lifestyle_os_backup_${new Date().toISOString().split('T')[0]}.json`);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
     };
 
     const soundTypes: {value: SoundType, label: string}[] = [
-        { value: 'modern', label: 'Modern (Soft)' },
-        { value: 'classic', label: 'Classic (Digital)' },
-        { value: 'retro', label: 'Retro (8-Bit)' }
+        { value: 'modern', label: 'Modern' },
+        { value: 'classic', label: 'Classic' },
+        { value: 'retro', label: 'Retro' }
     ];
 
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Settings">
-            <div className="space-y-6">
-                {/* Theme & Preferences */}
-                <div className="space-y-4">
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Preferences</h3>
-                    
-                    <button 
-                        onClick={toggleTheme}
-                        className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            {state.user.theme === 'light' ? <Sun size={20} className="text-orange-500"/> : <Moon size={20} className="text-blue-500"/>}
-                            <span className="font-bold text-gray-900 dark:text-white">App Theme</span>
-                        </div>
-                        <span className="text-sm font-bold text-gray-400 uppercase">{state.user.theme}</span>
-                    </button>
+    const accentColors = [
+        { id: 'blue', bg: 'bg-blue-500' },
+        { id: 'violet', bg: 'bg-violet-500' },
+        { id: 'emerald', bg: 'bg-emerald-500' },
+        { id: 'red', bg: 'bg-red-500' },
+        { id: 'orange', bg: 'bg-orange-500' },
+        { id: 'pink', bg: 'bg-pink-500' },
+    ];
 
-                    <button 
-                        onClick={toggleSound}
-                        className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            {state.user.soundEnabled ? <Volume2 size={20} className="text-emerald-500"/> : <VolumeX size={20} className="text-red-500"/>}
-                            <span className="font-bold text-gray-900 dark:text-white">Sound Effects</span>
-                        </div>
-                        <span className={`text-sm font-bold uppercase ${state.user.soundEnabled ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {state.user.soundEnabled ? 'On' : 'Off'}
-                        </span>
-                    </button>
-
-                    <button 
-                        onClick={toggleVibration}
-                        className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            {state.user.vibrationEnabled ? <Smartphone size={20} className="text-emerald-500"/> : <SmartphoneNfc size={20} className="text-red-500"/>}
-                            <span className="font-bold text-gray-900 dark:text-white">Vibrations</span>
-                        </div>
-                        <span className={`text-sm font-bold uppercase ${state.user.vibrationEnabled ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {state.user.vibrationEnabled ? 'On' : 'Off'}
-                        </span>
-                    </button>
+    // Helper Components
+    const MenuRow = ({ icon: Icon, label, onClick, value, isDestructive }: any) => (
+        <button 
+            onClick={onClick}
+            className={`w-full flex items-center justify-between p-4 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 last:border-none hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${isDestructive ? 'text-red-500' : 'text-gray-900 dark:text-white'}`}
+        >
+            <div className="flex items-center gap-3">
+                <div className={`p-1.5 rounded-md ${isDestructive ? 'bg-red-50 dark:bg-red-900/20' : 'bg-gray-100 dark:bg-gray-700'} text-inherit`}>
+                    <Icon size={18} />
                 </div>
+                <span className="font-bold text-sm">{label}</span>
+            </div>
+            <div className="flex items-center gap-2">
+                {value && <span className="text-xs text-gray-400 font-medium">{value}</span>}
+                {!isDestructive && <ChevronRight size={16} className="text-gray-300" />}
+            </div>
+        </button>
+    );
 
-                {/* Do Not Disturb */}
-                <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                        <MoonStar size={14} /> Do Not Disturb
-                     </h3>
-                     <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl space-y-4">
-                         <div className="flex justify-between items-center">
-                            <label className="text-sm font-bold text-gray-900 dark:text-white">Start Time</label>
-                            <input 
-                                type="time" 
-                                value={state.user.dndStartTime || "23:00"}
-                                onChange={(e) => updateUserConfig({ dndStartTime: e.target.value })}
-                                className="bg-white dark:bg-gray-700 p-2 rounded-lg text-sm font-bold outline-none"
-                            />
-                         </div>
-                         <div className="flex justify-between items-center">
-                            <label className="text-sm font-bold text-gray-900 dark:text-white">End Time</label>
-                            <input 
-                                type="time" 
-                                value={state.user.dndEndTime || "07:00"}
-                                onChange={(e) => updateUserConfig({ dndEndTime: e.target.value })}
-                                className="bg-white dark:bg-gray-700 p-2 rounded-lg text-sm font-bold outline-none"
-                            />
-                         </div>
-                         <p className="text-[10px] text-gray-400">
-                             Notifications and alarms will be silenced between these times.
-                         </p>
-                     </div>
-                </div>
+    const SectionHeader = ({ title }: { title: string }) => (
+        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest px-4 mb-2 mt-6">{title}</h3>
+    );
 
-                {/* Audio Customization */}
-                <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                        <Music size={14} /> Sound & Alerts
-                     </h3>
+    // --- VIEWS ---
 
-                     {/* Sound Type */}
-                     <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl space-y-2">
-                         <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Alert Sound Style</label>
-                         <div className="flex gap-2">
-                             {soundTypes.map((type) => (
-                                 <button
-                                    key={type.value}
-                                    onClick={() => updateUserConfig({ soundType: type.value })}
-                                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                                        state.user.soundType === type.value 
-                                        ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md' 
-                                        : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                    }`}
-                                 >
-                                     {type.label.split(' ')[0]}
-                                 </button>
-                             ))}
-                         </div>
-                     </div>
-
-                     {/* Durations */}
-                     <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl space-y-4">
-                         <div>
-                            <div className="flex justify-between items-center mb-1">
-                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase flex items-center gap-1">
-                                    <Clock size={12} /> Alarm Duration
-                                </label>
-                                <span className="text-xs font-bold text-gray-900 dark:text-white">{state.user.alarmDuration}s</span>
-                            </div>
-                            <input 
-                                type="range" 
-                                min="5" max="60" step="5"
-                                value={state.user.alarmDuration}
-                                onChange={(e) => updateUserConfig({ alarmDuration: parseInt(e.target.value) })}
-                                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-gray-900 dark:accent-white"
-                            />
-                         </div>
-
-                         <div>
-                            <div className="flex justify-between items-center mb-1">
-                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase flex items-center gap-1">
-                                    <Bell size={12} /> Chime Duration
-                                </label>
-                                <span className="text-xs font-bold text-gray-900 dark:text-white">{state.user.chimeDuration}s</span>
-                            </div>
-                            <input 
-                                type="range" 
-                                min="2" max="20" step="1"
-                                value={state.user.chimeDuration}
-                                onChange={(e) => updateUserConfig({ chimeDuration: parseInt(e.target.value) })}
-                                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-gray-900 dark:accent-white"
-                            />
-                         </div>
-                     </div>
-                </div>
-
-                {/* Permissions Info & Test */}
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex flex-col gap-3 border border-blue-100 dark:border-blue-800">
-                    <div className="flex items-start gap-3">
-                        {permissionStatus === 'granted' 
-                            ? <CheckCircle2 size={20} className="text-emerald-500 shrink-0 mt-0.5" /> 
-                            : <AlertCircle size={20} className="text-orange-500 shrink-0 mt-0.5" />
-                        }
-                        <div>
-                            <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                                {permissionStatus === 'granted' ? 'Notifications Active' : 'Notifications Required'}
-                            </h4>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                {permissionStatus === 'granted' 
-                                    ? "Alarms and reminders will work even when the app is in the background." 
-                                    : "Please enable notifications to receive alarms and habit reminders."}
-                            </p>
-                        </div>
+    const renderMain = () => (
+        <div className="space-y-1">
+            <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700">
+                <div className="p-4 flex items-center gap-4 border-b border-gray-100 dark:border-gray-700">
+                    <div className="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xl font-bold text-gray-500">
+                        {state.user.name.charAt(0).toUpperCase()}
                     </div>
-                    {permissionStatus !== 'granted' && (
-                        <button 
-                            onClick={requestPerms}
-                            className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg text-xs"
+                    <div>
+                        <h2 className="font-bold text-lg text-gray-900 dark:text-white">{state.user.name}</h2>
+                        <p className="text-xs text-gray-500">Lvl {state.user.level} • {state.user.xp} XP</p>
+                    </div>
+                </div>
+                <MenuRow icon={User} label="Profile" onClick={() => setCurrentView('profile')} />
+            </div>
+
+            <SectionHeader title="Appearance" />
+            <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700">
+                <MenuRow icon={Palette} label="Themes" value={state.user.theme === 'light' ? 'Light' : 'Dark'} onClick={() => setCurrentView('themes')} />
+            </div>
+
+            <SectionHeader title="System" />
+            <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700">
+                <MenuRow icon={Volume2} label="Sound & Vibration" value={state.user.soundEnabled ? 'On' : 'Off'} onClick={() => setCurrentView('sounds')} />
+                <MenuRow icon={Bell} label="Notifications" onClick={() => setCurrentView('notifications')} />
+            </div>
+
+            <SectionHeader title="Storage" />
+            <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700">
+                <MenuRow icon={Database} label="Data Vault" onClick={() => setCurrentView('datavault')} />
+            </div>
+            
+            <div className="text-center pt-8 pb-4">
+                <p className="text-[10px] text-gray-400">LifestyleOS v6.2</p>
+            </div>
+        </div>
+    );
+
+    const renderProfile = () => (
+        <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700 space-y-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Display Name</label>
+                    <input 
+                        type="text" 
+                        value={state.user.name} 
+                        onChange={(e) => updateUserConfig({ name: e.target.value })}
+                        className="w-full p-3 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm font-bold text-gray-900 dark:text-white outline-none"
+                    />
+                </div>
+                <div className="flex gap-4">
+                    <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Age</label>
+                        <input 
+                            type="number" 
+                            value={state.user.age} 
+                            onChange={(e) => updateUserConfig({ age: parseInt(e.target.value) })}
+                            className="w-full p-3 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm font-bold text-gray-900 dark:text-white outline-none"
+                        />
+                    </div>
+                    <div className="flex-1">
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Weight (kg)</label>
+                        <input 
+                            type="number" 
+                            value={state.user.weight} 
+                            onChange={(e) => updateUserConfig({ weight: parseInt(e.target.value) })}
+                            className="w-full p-3 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm font-bold text-gray-900 dark:text-white outline-none"
+                        />
+                    </div>
+                </div>
+            </div>
+            <p className="text-xs text-gray-400 px-4">
+                These details are stored locally and used for calorie estimations.
+            </p>
+        </div>
+    );
+
+    const renderThemes = () => (
+        <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
+                <button 
+                    onClick={() => updateUserConfig({ theme: 'light' })}
+                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                    <div className="flex items-center gap-3">
+                        <Sun size={20} className="text-orange-500" />
+                        <span className="font-bold text-sm text-gray-900 dark:text-white">Light Mode</span>
+                    </div>
+                    {state.user.theme === 'light' && <CheckCircle2 size={18} className="text-blue-500" />}
+                </button>
+                <button 
+                    onClick={() => updateUserConfig({ theme: 'dark' })}
+                    className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                    <div className="flex items-center gap-3">
+                        <Moon size={20} className="text-blue-500" />
+                        <span className="font-bold text-sm text-gray-900 dark:text-white">Dark Mode</span>
+                    </div>
+                    {state.user.theme === 'dark' && <CheckCircle2 size={18} className="text-blue-500" />}
+                </button>
+            </div>
+
+            <div>
+                <SectionHeader title="Accent Color" />
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700 flex justify-between">
+                    {accentColors.map(c => (
+                        <button
+                            key={c.id}
+                            onClick={() => updateUserConfig({ accentColor: c.id })}
+                            className={`w-10 h-10 rounded-full ${c.bg} shadow-sm flex items-center justify-center transition-transform active:scale-95 ${state.user.accentColor === c.id ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500' : ''}`}
                         >
-                            Enable Notifications
+                            {state.user.accentColor === c.id && <CheckCircle2 size={16} className="text-white" />}
                         </button>
-                    )}
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderSounds = () => (
+        <div className="space-y-6">
+             <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700">
+                <button 
+                    onClick={() => updateUserConfig({ soundEnabled: !state.user.soundEnabled })}
+                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700"
+                >
+                    <span className="font-bold text-sm text-gray-900 dark:text-white">Sound Effects</span>
+                    <div className={`w-10 h-6 rounded-full p-1 transition-colors ${state.user.soundEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${state.user.soundEnabled ? 'translate-x-4' : ''}`} />
+                    </div>
+                </button>
+                <button 
+                    onClick={() => updateUserConfig({ vibrationEnabled: !state.user.vibrationEnabled })}
+                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700"
+                >
+                    <span className="font-bold text-sm text-gray-900 dark:text-white">Haptic Vibration</span>
+                    <div className={`w-10 h-6 rounded-full p-1 transition-colors ${state.user.vibrationEnabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${state.user.vibrationEnabled ? 'translate-x-4' : ''}`} />
+                    </div>
+                </button>
+                 <button 
+                    onClick={() => updateUserConfig({ backgroundKeepAlive: !state.user.backgroundKeepAlive })}
+                    className="w-full flex items-center justify-between p-4"
+                >
+                    <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-gray-900 dark:text-white">Background Keep-Alive</span>
+                        {state.user.backgroundKeepAlive && <BatteryCharging size={14} className="text-orange-500 animate-pulse"/>}
+                    </div>
+                    <div className={`w-10 h-6 rounded-full p-1 transition-colors ${state.user.backgroundKeepAlive ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${state.user.backgroundKeepAlive ? 'translate-x-4' : ''}`} />
+                    </div>
+                </button>
+            </div>
+            
+            <p className="text-xs text-gray-500 dark:text-gray-400 px-4">
+               <strong>Background Keep-Alive:</strong> Plays silent audio loop to keep the app active 24/7 for alarms. 
+               <span className="text-orange-500 font-bold ml-1">Consumes more battery.</span>
+            </p>
+
+            <SectionHeader title="Do Not Disturb" />
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 space-y-4">
+                <div className="flex justify-between items-center">
+                    <label className="text-sm font-bold text-gray-900 dark:text-white">Start</label>
+                    <input 
+                        type="time" 
+                        value={state.user.dndStartTime || "23:00"}
+                        onChange={(e) => updateUserConfig({ dndStartTime: e.target.value })}
+                        className="bg-gray-100 dark:bg-gray-900 p-2 rounded-lg text-sm font-bold outline-none"
+                    />
+                </div>
+                <div className="flex justify-between items-center">
+                    <label className="text-sm font-bold text-gray-900 dark:text-white">End</label>
+                    <input 
+                        type="time" 
+                        value={state.user.dndEndTime || "07:00"}
+                        onChange={(e) => updateUserConfig({ dndEndTime: e.target.value })}
+                        className="bg-gray-100 dark:bg-gray-900 p-2 rounded-lg text-sm font-bold outline-none"
+                    />
+                </div>
+            </div>
+
+            <SectionHeader title="Sound Options" />
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 space-y-4">
+                <div className="flex gap-2">
+                    {soundTypes.map((type) => (
+                        <button
+                        key={type.value}
+                        onClick={() => updateUserConfig({ soundType: type.value })}
+                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                            state.user.soundType === type.value 
+                            ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-md' 
+                            : 'bg-gray-100 dark:bg-gray-900 text-gray-500 dark:text-gray-400'
+                        }`}
+                        >
+                            {type.label}
+                        </button>
+                    ))}
+                </div>
+                <div>
+                    <div className="flex justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-500 uppercase">Alarm Length</span>
+                        <span className="text-xs font-bold text-gray-900 dark:text-white">{state.user.alarmDuration}s</span>
+                    </div>
+                    <input 
+                        type="range" min="5" max="60" step="5"
+                        value={state.user.alarmDuration}
+                        onChange={(e) => updateUserConfig({ alarmDuration: parseInt(e.target.value) })}
+                        className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-gray-900 dark:accent-white"
+                    />
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderNotifications = () => (
+        <div className="space-y-6">
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 flex flex-col gap-4">
+                <div className="flex items-start gap-3">
+                    {permissionStatus === 'granted' 
+                        ? <CheckCircle2 size={24} className="text-green-500 shrink-0" /> 
+                        : <AlertCircle size={24} className="text-orange-500 shrink-0" />
+                    }
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                            {permissionStatus === 'granted' ? 'Active' : 'Permission Required'}
+                        </h4>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {permissionStatus === 'granted' 
+                                ? "Alarms and reminders will work in the background." 
+                                : "Enable notifications to receive alerts."}
+                        </p>
+                    </div>
+                </div>
+                {permissionStatus !== 'granted' && (
                     <button 
-                        onClick={sendTestNotification}
-                        className="w-full py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-lg text-xs hover:bg-gray-50 dark:hover:bg-gray-700"
+                        onClick={requestPerms}
+                        className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg text-sm"
                     >
-                        Test Notification
+                        Enable Notifications
                     </button>
+                )}
+            </div>
+
+            <button 
+                onClick={sendTestNotification}
+                className="w-full py-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-bold rounded-xl active:scale-95 transition-transform"
+            >
+                Send Test Notification
+            </button>
+        </div>
+    );
+
+    const renderDataVault = () => (
+        <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700">
+                <MenuRow icon={Download} label="Export Backup" onClick={handleExport} />
+                <div className="relative">
+                    <MenuRow icon={Upload} label="Import Backup" onClick={handleImportClick} />
+                    <input 
+                        ref={fileInputRef}
+                        type="file" 
+                        accept=".json" 
+                        onChange={handleFileChange} 
+                        className="hidden" 
+                    />
                 </div>
+                <MenuRow icon={RefreshCw} label="Recalculate Levels" onClick={() => { if(confirm("Recalculate?")) recalculateXP(); }} />
+            </div>
 
-                {/* Data Management */}
-                <div className="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Data Vault</h3>
-                     
-                     <div className="grid grid-cols-2 gap-3">
-                         <button 
-                             onClick={handleExport}
-                             className="flex flex-col items-center justify-center gap-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                         >
-                             <Download size={20} className="text-gray-700 dark:text-gray-300" />
-                             <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Backup</span>
-                         </button>
-
-                         <label className="flex flex-col items-center justify-center gap-2 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer relative overflow-hidden">
-                             <Upload size={20} className="text-gray-700 dark:text-gray-300" />
-                             <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Restore</span>
-                             <input 
-                                 ref={fileInputRef}
-                                 type="file" 
-                                 accept=".json" 
-                                 onChange={handleFileChange} 
-                                 className="absolute inset-0 opacity-0 cursor-pointer" 
-                             />
-                         </label>
-                     </div>
-                     
-                     {importStatus && (
-                        <div className={`text-center text-xs font-bold ${importStatus.includes("success") ? "text-emerald-500" : "text-red-500"}`}>
-                            {importStatus}
-                        </div>
-                     )}
-
-                     <button 
-                         onClick={handleRecalculate}
-                         className="w-full py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-bold rounded-xl flex items-center justify-center gap-2 text-xs"
-                     >
-                         <RefreshCw size={14} /> Recalculate Levels
-                     </button>
-
-                     <button 
-                         onClick={handleNuke}
-                         className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl flex items-center justify-center gap-2 text-xs hover:bg-red-100 dark:hover:bg-red-900/30"
-                     >
-                         <AlertTriangle size={14} /> Reset All Data
-                     </button>
+            {importStatus && (
+                <div className={`text-center text-xs font-bold ${importStatus.includes("success") ? "text-green-500" : "text-red-500"}`}>
+                    {importStatus}
                 </div>
+            )}
 
-                <div className="text-center pt-4 border-t border-gray-100 dark:border-gray-800">
-                    <p className="text-[10px] text-gray-400">
-                        Lifestyle OS v6.0 • Local Storage Only
-                    </p>
-                </div>
+            <div className="pt-8">
+                <MenuRow icon={AlertTriangle} label="Reset Everything" onClick={() => { if(confirm("Wipe all data?")) { resetData(); onClose(); }}} isDestructive />
+                <p className="text-xs text-gray-400 px-4 mt-2">
+                    This action cannot be undone. All logs and settings will be lost.
+                </p>
+            </div>
+        </div>
+    );
+
+    // Header Title Logic
+    const getHeader = () => {
+        switch(currentView) {
+            case 'main': return 'Settings';
+            case 'profile': return 'Profile';
+            case 'themes': return 'Themes';
+            case 'sounds': return 'Sound & Vibration';
+            case 'notifications': return 'Notifications';
+            case 'datavault': return 'Data Vault';
+        }
+    };
+
+    return (
+        <Modal 
+            isOpen={isOpen} 
+            onClose={onClose} 
+            title={getHeader()}
+            onBack={currentView !== 'main' ? () => setCurrentView('main') : undefined}
+        >
+            <div className="pt-2 animate-fade-in">
+                {currentView === 'main' && renderMain()}
+                {currentView === 'profile' && renderProfile()}
+                {currentView === 'themes' && renderThemes()}
+                {currentView === 'sounds' && renderSounds()}
+                {currentView === 'notifications' && renderNotifications()}
+                {currentView === 'datavault' && renderDataVault()}
             </div>
         </Modal>
     );
