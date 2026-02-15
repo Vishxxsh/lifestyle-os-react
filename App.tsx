@@ -93,7 +93,7 @@ const generateNotificationImage = (text: string) => {
     return canvas.toDataURL('image/png');
 };
 
-// --- Background Audio Keeper (Fixed) ---
+// --- Background Audio Keeper ---
 // 1-second silent MP3
 const SILENT_AUDIO_URL = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
@@ -102,13 +102,14 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
     const audioRef = useRef<HTMLAudioElement>(null);
     const [isBlocked, setIsBlocked] = useState(false);
 
+    // Effect to handle playback state changes
     useEffect(() => {
         const audio = audioRef.current;
         if (!audio) return;
 
         const startPlayback = async () => {
             try {
-                // Volume must be non-zero for Android to show media controls
+                // Critical: Set volume > 0. On some Android versions, 0 volume = pause = suspend.
                 audio.volume = 0.05; 
                 audio.loop = true;
                 
@@ -117,27 +118,34 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
                 setIsBlocked(false);
                 
                 if ('mediaSession' in navigator) {
+                    // Use locally generated image to avoid network fetch failures for the icon
                     const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
 
                     navigator.mediaSession.metadata = new MediaMetadata({
                         title: 'LifestyleOS',
-                        artist: 'Focus Mode Active',
-                        album: 'Keep-Alive Service',
+                        artist: 'Background Service',
+                        album: 'Keep-Alive Active',
                         artwork: [
                             { src: artworkImage, sizes: '512x512', type: 'image/png' }
                         ]
                     });
-                    
-                    // Dummy handlers are REQUIRED for the "Media Player" to stay in the notification shade
+
+                    // Define dummy handlers to satisfy Android Media Controls
                     const noop = () => {};
-                    navigator.mediaSession.setActionHandler('play', () => { audio.play(); });
-                    navigator.mediaSession.setActionHandler('pause', () => { 
-                         // IMPORTANT: If user hits pause, immediately play again to keep alive
-                         audio.play(); 
+                    const actions = [
+                        ['play', () => audio.play()],
+                        ['pause', () => audio.play()], // Force play on pause attempt
+                        ['stop', noop],
+                        ['previoustrack', noop],
+                        ['nexttrack', noop],
+                        ['seekbackward', noop],
+                        ['seekforward', noop],
+                    ] as const;
+
+                    actions.forEach(([action, handler]) => {
+                         try { navigator.mediaSession.setActionHandler(action, handler); } 
+                         catch (e) { /* ignore unsupported actions */ }
                     });
-                    navigator.mediaSession.setActionHandler('stop', noop);
-                    navigator.mediaSession.setActionHandler('previoustrack', noop);
-                    navigator.mediaSession.setActionHandler('nexttrack', noop);
                     
                     navigator.mediaSession.playbackState = 'playing';
                 }
@@ -158,10 +166,7 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
         }
         
         return () => {
-            // Only pause if we are actually turning it off, not just re-rendering
-            if (!state.user.backgroundKeepAlive && audio) {
-                audio.pause();
-            }
+            if (audio) audio.pause();
         };
     }, [state.user.backgroundKeepAlive, onBlocked]);
 
@@ -180,34 +185,36 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
             }
         };
 
-        // Capture logic on next interaction
-        window.addEventListener('click', handleInteraction, { once: true });
-        window.addEventListener('touchstart', handleInteraction, { once: true });
+        // Capture logic on ANY interaction
+        const events = ['click', 'touchstart', 'keydown', 'scroll'];
+        events.forEach(evt => window.addEventListener(evt, handleInteraction, { once: true, passive: true }));
         
         return () => {
-            window.removeEventListener('click', handleInteraction);
-            window.removeEventListener('touchstart', handleInteraction);
+            events.forEach(evt => window.removeEventListener(evt, handleInteraction));
         };
     }, [isBlocked, state.user.backgroundKeepAlive]);
 
+    // DOM Element: Using opacity 0 instead of hidden to prevent background throttling by OS
     return (
         <audio 
             ref={audioRef} 
             src={SILENT_AUDIO_URL} 
             loop 
-            // FIXED: Do not use hidden. Use style to make it invisible but rendered.
+            playsInline
             style={{ 
                 opacity: 0, 
-                position: 'absolute', 
+                position: 'fixed', 
+                bottom: 0, 
+                left: 0, 
                 pointerEvents: 'none',
-                zIndex: -1,
                 height: 0,
-                width: 0
+                width: 0,
+                zIndex: -1 
             }}
-            playsInline
         />
     );
 };
+
 const NotificationManager: React.FC<{ 
     onNotify: (title: string, msg: string) => void,
     onAlarmStart: (title: string, msg: string, id?: number, type?: 'habit' | 'todo') => void
