@@ -92,7 +92,7 @@ const generateNotificationImage = (text: string) => {
     return canvas.toDataURL('image/png');
 };
 
-// --- Background Audio Keeper ---
+// --- Background Audio Keeper (Smart Unlock Version) ---
 // 1-second silent MP3
 const SILENT_AUDIO_URL = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
@@ -100,61 +100,67 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
     const { state } = useApp();
     const audioRef = useRef<HTMLAudioElement>(null);
     const [isBlocked, setIsBlocked] = useState(false);
+    const hasUnlocked = useRef(false);
 
-    // Effect to handle playback state changes
+    // 1. PRE-EMPTIVE UNLOCKER: Listens for the first tap anywhere to "Bless" the audio
+    useEffect(() => {
+        const unlockAudio = () => {
+            if (audioRef.current && !hasUnlocked.current) {
+                // Play and immediately pause just to get permission
+                audioRef.current.play()
+                    .then(() => {
+                        if (!state.user.backgroundKeepAlive) {
+                            audioRef.current?.pause();
+                        }
+                        hasUnlocked.current = true;
+                    })
+                    .catch(() => { /* Ignore initial failures */ });
+            }
+        };
+
+        const events = ['click', 'touchstart', 'keydown'];
+        events.forEach(evt => window.addEventListener(evt, unlockAudio, { capture: true, once: true }));
+
+        return () => {
+            events.forEach(evt => window.removeEventListener(evt, unlockAudio, { capture: true }));
+        };
+    }, [state.user.backgroundKeepAlive]);
+
+    // 2. MAIN LOGIC: Handles the actual Focus Mode toggle
     useEffect(() => {
         const audio = audioRef.current;
         if (!audio) return;
 
         const startPlayback = async () => {
             try {
-                // Critical: Set volume to 1.0. Silent file means no noise, but high volume indicates priority to OS.
                 audio.volume = 1.0; 
                 audio.loop = true;
                 
-                // Try to play immediately
                 await audio.play();
-                
                 setIsBlocked(false);
                 
                 if ('mediaSession' in navigator) {
                     const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
-
                     navigator.mediaSession.metadata = new MediaMetadata({
                         title: 'LifestyleOS',
-                        artist: 'Background Service',
-                        album: 'Keep-Alive Active',
-                        artwork: [
-                            { src: artworkImage, sizes: '512x512', type: 'image/png' }
-                        ]
+                        artist: 'Focus Mode Active',
+                        album: 'Keep-Alive Service',
+                        artwork: [{ src: artworkImage, sizes: '512x512', type: 'image/png' }]
                     });
 
-                    // Define dummy handlers to satisfy Android Media Controls
                     const noop = () => {};
-                    const actions = [
-                        ['play', () => audio.play()],
-                        ['pause', () => audio.play()], // Force play on pause attempt to prevent sleeping
-                        ['stop', noop],
-                        ['previoustrack', noop],
-                        ['nexttrack', noop],
-                        ['seekbackward', noop],
-                        ['seekforward', noop],
-                    ] as const;
-
-                    actions.forEach(([action, handler]) => {
-                         try { navigator.mediaSession.setActionHandler(action, handler); } 
-                         catch (e) { /* ignore unsupported actions */ }
-                    });
-                    
+                    navigator.mediaSession.setActionHandler('play', () => audio.play());
+                    navigator.mediaSession.setActionHandler('pause', () => audio.play()); // FORCE RESUME
+                    navigator.mediaSession.setActionHandler('stop', noop);
                     navigator.mediaSession.playbackState = 'playing';
                 }
             } catch (err) {
-                // If autoplay is blocked, we set the blocked state to true.
-                // We do NOT call onBlocked() immediately if we can attach a listener to fix it silently.
-                console.warn("Background audio autoplay blocked:", err);
-                setIsBlocked(true);
-                // Call onBlocked to notify user if they are looking, but we will also auto-retry on interaction
-                onBlocked();
+                console.warn("Autoplay blocked:", err);
+                // Only show error if we haven't managed to unlock it yet
+                if (!hasUnlocked.current) {
+                    setIsBlocked(true);
+                    onBlocked();
+                }
             }
         };
 
@@ -162,46 +168,29 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
             startPlayback();
         } else {
             audio.pause();
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = 'none';
-            }
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
         }
-        
-        return () => {
-            if (audio) audio.pause();
-        };
     }, [state.user.backgroundKeepAlive, onBlocked]);
 
-    // Retry listener for blocked autoplay - Aggressive capture
+    // 3. FALLBACK: If it was blocked, fix it on next click
     useEffect(() => {
         if (!isBlocked || !state.user.backgroundKeepAlive) return;
 
         const handleInteraction = () => {
             if (audioRef.current) {
-                const audio = audioRef.current;
-                audio.volume = 1.0;
-                audio.play()
+                audioRef.current.play()
                     .then(() => {
                         setIsBlocked(false);
                         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
                     })
-                    .catch(e => console.error("Retry failed", e));
+                    .catch(console.error);
             }
         };
 
-        // Capture logic on ANY interaction with the document
-        // We use capture: true to ensure we get the event before it's stopped by other handlers
-        const options = { once: true, capture: true };
-        const events = ['click', 'touchstart', 'touchend', 'keydown', 'scroll', 'visibilitychange'];
-        
-        events.forEach(evt => window.addEventListener(evt, handleInteraction, options));
-        
-        return () => {
-            events.forEach(evt => window.removeEventListener(evt, handleInteraction, options));
-        };
+        window.addEventListener('click', handleInteraction, { once: true });
+        return () => window.removeEventListener('click', handleInteraction);
     }, [isBlocked, state.user.backgroundKeepAlive]);
 
-    // DOM Element: Using 1px dimensions and 0.01 opacity (not 0) to avoid browser optimizations that cull invisible elements
     return (
         <audio 
             ref={audioRef} 
@@ -221,7 +210,6 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
         />
     );
 };
-
 const NotificationManager: React.FC<{ 
     onNotify: (title: string, msg: string) => void,
     onAlarmStart: (title: string, msg: string, id?: number, type?: 'habit' | 'todo') => void
