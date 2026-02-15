@@ -9,6 +9,7 @@ import {
     Palette, ArrowLeft, Battery, BatteryCharging
 } from 'lucide-react';
 import { SoundType } from '../types';
+import { getThemeColors } from '../utils';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -23,6 +24,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     const [importStatus, setImportStatus] = useState<string>("");
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
+
+    const theme = getThemeColors(state.user.accentColor);
 
     // Reset view on open
     useEffect(() => {
@@ -135,6 +138,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         { id: 'red', bg: 'bg-red-500' },
         { id: 'orange', bg: 'bg-orange-500' },
         { id: 'pink', bg: 'bg-pink-500' },
+        { id: 'gold', bg: 'bg-amber-500' },
+        { id: 'black', bg: 'bg-gray-900 border border-gray-700' },
+        { id: 'white', bg: 'bg-white border border-gray-300' },
     ];
 
     // Helper Components
@@ -194,7 +200,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </div>
             
             <div className="text-center pt-8 pb-4">
-                <p className="text-[10px] text-gray-400">LifestyleOS v6.2</p>
+                <p className="text-[10px] text-gray-400">LifestyleOS v6.3</p>
             </div>
         </div>
     );
@@ -249,30 +255,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         <Sun size={20} className="text-orange-500" />
                         <span className="font-bold text-sm text-gray-900 dark:text-white">Light Mode</span>
                     </div>
-                    {state.user.theme === 'light' && <CheckCircle2 size={18} className="text-blue-500" />}
+                    {state.user.theme === 'light' && <CheckCircle2 size={18} className={theme.text} />}
                 </button>
                 <button 
                     onClick={() => updateUserConfig({ theme: 'dark' })}
                     className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                     <div className="flex items-center gap-3">
-                        <Moon size={20} className="text-blue-500" />
+                        <Moon size={20} className={theme.text} />
                         <span className="font-bold text-sm text-gray-900 dark:text-white">Dark Mode</span>
                     </div>
-                    {state.user.theme === 'dark' && <CheckCircle2 size={18} className="text-blue-500" />}
+                    {state.user.theme === 'dark' && <CheckCircle2 size={18} className={theme.text} />}
                 </button>
             </div>
 
             <div>
                 <SectionHeader title="Accent Color" />
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700 flex justify-between">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700 flex flex-wrap gap-3">
                     {accentColors.map(c => (
                         <button
                             key={c.id}
                             onClick={() => updateUserConfig({ accentColor: c.id })}
-                            className={`w-10 h-10 rounded-full ${c.bg} shadow-sm flex items-center justify-center transition-transform active:scale-95 ${state.user.accentColor === c.id ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500' : ''}`}
+                            className={`w-10 h-10 rounded-full ${c.bg} shadow-sm flex items-center justify-center transition-transform active:scale-95 ${state.user.accentColor === c.id ? 'ring-4 ring-offset-2 ring-gray-200 dark:ring-gray-600' : ''}`}
                         >
-                            {state.user.accentColor === c.id && <CheckCircle2 size={16} className="text-white" />}
+                            {state.user.accentColor === c.id && <CheckCircle2 size={16} className={`text-white ${c.id === 'white' ? 'text-black' : ''}`} />}
                         </button>
                     ))}
                 </div>
@@ -371,6 +377,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-gray-900 dark:accent-white"
                     />
                 </div>
+                <div>
+                    <div className="flex justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-500 uppercase">Alert Length</span>
+                        <span className="text-xs font-bold text-gray-900 dark:text-white">{state.user.chimeDuration || 5}s</span>
+                    </div>
+                    <input 
+                        type="range" min="1" max="20" step="1"
+                        value={state.user.chimeDuration || 5}
+                        onChange={(e) => updateUserConfig({ chimeDuration: parseInt(e.target.value) })}
+                        className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-gray-900 dark:accent-white"
+                    />
+                </div>
             </div>
         </div>
     );
@@ -397,7 +415,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 {permissionStatus !== 'granted' && (
                     <button 
                         onClick={requestPerms}
-                        className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg text-sm"
+                        className={`w-full py-3 ${theme.bg} ${theme.buttonText} font-bold rounded-lg text-sm`}
                     >
                         Enable Notifications
                     </button>
@@ -422,7 +440,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <input 
                         ref={fileInputRef}
                         type="file" 
-                        accept=".json" 
+                        accept=".json,application/json,text/plain" 
                         onChange={handleFileChange} 
                         className="hidden" 
                     />

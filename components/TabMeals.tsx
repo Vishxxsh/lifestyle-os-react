@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { getTodayStr, formatDateDisplay } from '../utils';
+import { getTodayStr, formatDateDisplay, getThemeColors } from '../utils';
 import { Plus, X, Flame, Menu, ChevronLeft, ChevronRight, Calendar, Target, Edit2 } from 'lucide-react';
 import { Modal } from './Modal';
 
@@ -39,6 +39,8 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
   const inTarget = state.user.caloriesInTarget || 2000;
   const outTarget = state.user.caloriesOutTarget || 500;
   const netTarget = inTarget - outTarget;
+  
+  const theme = getThemeColors(state.user.accentColor);
 
   // Date handlers
   const handlePrevDay = () => {
@@ -96,23 +98,8 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
       setIsTargetModalOpen(false);
   };
 
-  // Color Logic
-  // In: Green if under target, Red if over
-  const inColor = totalCalIn <= inTarget ? 'bg-emerald-500' : 'bg-red-500';
-  // Out: Green if over target (hit goal), Orange/Gray if under (working on it)
-  const outColor = totalCalOut >= outTarget ? 'bg-emerald-500' : 'bg-orange-500';
-  
-  // Net Color Logic based on Sign Matching
-  let netColor = 'text-gray-900 dark:text-white';
-  if (netTarget < 0) {
-      // Weight Loss Goal (Negative Target) -> Actual should be Negative
-      netColor = netCalories <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
-  } else {
-      // Weight Gain Goal (Positive Target) -> Actual should be Positive
-      netColor = netCalories >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
-  }
-
-  // Calculated Net for Modal Display
+  // Minimalistic Color Logic: Use accent for fill/emphasis, gray for neutral
+  // We avoid Hard Red/Green unless we want to warn. Here we go minimal.
   const calcNetInModal = (parseInt(tempInTarget) || 0) - (parseInt(tempOutTarget) || 0);
 
   return (
@@ -143,49 +130,62 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
           </button>
       </div>
 
-      {/* Macro Dashboard - Sticky Header */}
-      <div className="flex gap-4 sticky top-0 z-10 bg-[#F2F2F7]/95 dark:bg-black/95 backdrop-blur-md pb-2 pt-2 transition-colors duration-500">
+      {/* Minimalistic Dashboard Cards */}
+      <div className="grid grid-cols-2 gap-4">
         <button 
             onClick={openTargetModal}
-            className={`flex-1 ${inColor} text-white p-4 rounded-2xl shadow-lg relative overflow-hidden transition-colors text-left group`}
+            className={`p-5 rounded-2xl border transition-all duration-300 bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 shadow-sm relative overflow-hidden group`}
         >
-          <div className="relative z-10">
-            <div className="flex items-end gap-1">
-                <span className="block text-3xl font-extrabold">{totalCalIn}</span>
-                <span className="text-xs font-medium opacity-80 mb-1.5">/ {inTarget}</span>
+          <div className="relative z-10 text-left">
+            <div className={`text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2 ${theme.text}`}>
+               <Plus size={14} /> Intake
             </div>
-            <span className="text-xs text-white/80 font-bold uppercase tracking-wider">Calories In</span>
+            <div className="flex items-baseline gap-1">
+                <span className="text-3xl font-black text-gray-900 dark:text-white">{totalCalIn}</span>
+                <span className="text-xs font-medium text-gray-400">/ {inTarget}</span>
+            </div>
           </div>
-          <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-40 transition-opacity">
-              <Plus size={40} />
+          {/* Subtle progress bar at bottom */}
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800">
+              <div 
+                className={`h-full ${theme.bg}`} 
+                style={{ width: `${Math.min(100, (totalCalIn / inTarget) * 100)}%` }}
+              ></div>
           </div>
         </button>
 
         <button 
             onClick={openTargetModal}
-            className={`flex-1 ${outColor} text-white p-4 rounded-2xl shadow-lg relative overflow-hidden transition-colors text-left group`}
+            className={`p-5 rounded-2xl border transition-all duration-300 bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 shadow-sm relative overflow-hidden group`}
         >
-          <div className="relative z-10">
-            <div className="flex items-end gap-1">
-                <span className="block text-3xl font-extrabold">{totalCalOut}</span>
-                <span className="text-xs font-medium opacity-80 mb-1.5">/ {outTarget}</span>
+          <div className="relative z-10 text-left">
+            <div className={`text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2 ${theme.text}`}>
+               <Flame size={14} fill="currentColor" /> Burn
             </div>
-            <span className="text-xs text-white/80 font-bold uppercase tracking-wider">Calories Out</span>
+            <div className="flex items-baseline gap-1">
+                <span className="text-3xl font-black text-gray-900 dark:text-white">{totalCalOut}</span>
+                <span className="text-xs font-medium text-gray-400">/ {outTarget}</span>
+            </div>
           </div>
-          <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-40 transition-opacity">
-              <Flame size={40} />
+           {/* Subtle progress bar at bottom */}
+           <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-100 dark:bg-gray-800">
+              <div 
+                className={`h-full ${theme.bg}`} 
+                style={{ width: `${Math.min(100, (totalCalOut / outTarget) * 100)}%` }}
+              ></div>
           </div>
         </button>
       </div>
       
-      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-900 dark:text-white p-4 rounded-2xl shadow-sm flex justify-between items-center">
+      {/* Net Summary Bar */}
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-4 rounded-2xl shadow-sm flex justify-between items-center">
         <div>
-           <span className="block text-xl font-extrabold">{totalPro}g</span>
+           <span className="block text-xl font-extrabold text-gray-900 dark:text-white">{totalPro}g</span>
            <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">Protein</span>
         </div>
         <div className="text-right">
             <div className="flex items-center justify-end gap-1">
-                <span className={`block text-xl font-extrabold ${netColor}`}>
+                <span className={`block text-xl font-extrabold ${theme.text}`}>
                     {netCalories > 0 ? '+' : ''}{netCalories}
                 </span>
                 <span className="text-xs text-gray-400 font-medium mt-1">/ {netTarget}</span>
@@ -198,7 +198,7 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
       <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
         <div className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
            <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">Food Log</h3>
-           <button onClick={() => setIsFoodModalOpen(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+           <button onClick={() => setIsFoodModalOpen(true)} className={`text-xs font-bold ${theme.text} flex items-center gap-1 hover:opacity-80`}>
              <Plus size={14} /> Add Food
            </button>
         </div>
@@ -224,7 +224,7 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
       <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
         <div className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
            <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">Activity Log</h3>
-           <button onClick={() => setIsWorkoutModalOpen(true)} className="text-xs font-bold text-orange-600 dark:text-orange-400 flex items-center gap-1">
+           <button onClick={() => setIsWorkoutModalOpen(true)} className={`text-xs font-bold ${theme.text} flex items-center gap-1 hover:opacity-80`}>
              <Plus size={14} /> Add Activity
            </button>
         </div>
@@ -232,7 +232,7 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
           {workouts.map(w => (
             <div key={w.id} className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800 last:border-none">
                <div className="flex items-center gap-3">
-                 <div className="p-2 bg-orange-100 dark:bg-orange-900/30 text-orange-500 dark:text-orange-400 rounded-lg">
+                 <div className={`p-2 rounded-lg ${theme.bgLight} ${theme.text}`}>
                     <Flame size={16} fill="currentColor" />
                  </div>
                  <div>
@@ -258,7 +258,7 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Food Name</label>
             <input 
               list="history" 
-              className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-white text-gray-900 dark:text-white" 
+              className={`w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-opacity-50 ${theme.ring} text-gray-900 dark:text-white`}
               placeholder="e.g. 2 Eggs" 
               value={foodName} 
               onChange={handleFoodNameChange} 
@@ -271,15 +271,15 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
           <div className="flex gap-4">
              <div className="flex-1">
                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Calories</label>
-               <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-white text-gray-900 dark:text-white" placeholder="0" value={cal} onChange={e => setCal(e.target.value)} />
+               <input type="number" className={`w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-opacity-50 ${theme.ring} text-gray-900 dark:text-white`} placeholder="0" value={cal} onChange={e => setCal(e.target.value)} />
              </div>
              <div className="flex-1">
                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Protein (g)</label>
-               <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-white text-gray-900 dark:text-white" placeholder="0" value={pro} onChange={e => setPro(e.target.value)} />
+               <input type="number" className={`w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-opacity-50 ${theme.ring} text-gray-900 dark:text-white`} placeholder="0" value={pro} onChange={e => setPro(e.target.value)} />
              </div>
           </div>
 
-          <button onClick={handleSaveFood} className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-xl mt-4">Log Fuel</button>
+          <button onClick={handleSaveFood} className={`w-full py-4 ${theme.bg} text-white font-bold rounded-xl mt-4 active:scale-95 transition-transform`}>Log Fuel</button>
         </div>
       </Modal>
 
@@ -289,7 +289,7 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
           <div>
             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Activity Name</label>
             <input 
-              className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-white text-gray-900 dark:text-white" 
+              className={`w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-opacity-50 ${theme.ring} text-gray-900 dark:text-white`}
               placeholder="e.g. Running, Gym" 
               value={workoutName} 
               onChange={e => setWorkoutName(e.target.value)} 
@@ -298,10 +298,10 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
           
           <div>
              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Calories Burnt</label>
-             <input type="number" className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-white text-gray-900 dark:text-white" placeholder="0" value={workoutCal} onChange={e => setWorkoutCal(e.target.value)} />
+             <input type="number" className={`w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-opacity-50 ${theme.ring} text-gray-900 dark:text-white`} placeholder="0" value={workoutCal} onChange={e => setWorkoutCal(e.target.value)} />
           </div>
 
-          <button onClick={handleSaveWorkout} className="w-full py-4 bg-orange-500 dark:bg-orange-600 text-white font-bold rounded-xl mt-4">Log Burn</button>
+          <button onClick={handleSaveWorkout} className={`w-full py-4 ${theme.bg} text-white font-bold rounded-xl mt-4 active:scale-95 transition-transform`}>Log Burn</button>
         </div>
       </Modal>
 
@@ -309,40 +309,40 @@ export const TabMeals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
       <Modal isOpen={isTargetModalOpen} onClose={() => setIsTargetModalOpen(false)} title="Calorie Targets">
         <div className="space-y-5">
             <div>
-                <label className="block text-xs font-bold text-emerald-500 uppercase mb-1">Daily Max Intake (Calories In)</label>
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Daily Max Intake (Calories In)</label>
                 <input 
                     type="number"
-                    className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-emerald-500 text-gray-900 dark:text-white" 
+                    className={`w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-opacity-50 ${theme.ring} text-gray-900 dark:text-white`}
                     value={tempInTarget} 
                     onChange={e => setTempInTarget(e.target.value)} 
                 />
             </div>
             
             <div>
-                <label className="block text-xs font-bold text-orange-500 uppercase mb-1">Daily Min Burn (Calories Out)</label>
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Daily Min Burn (Calories Out)</label>
                 <input 
                     type="number"
-                    className="w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-white" 
+                    className={`w-full p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border-none focus:ring-2 focus:ring-opacity-50 ${theme.ring} text-gray-900 dark:text-white`}
                     value={tempOutTarget} 
                     onChange={e => setTempOutTarget(e.target.value)} 
                 />
             </div>
 
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
-                <label className="block text-xs font-bold text-blue-500 uppercase mb-1">Calculated Net Target</label>
-                <div className="text-2xl font-black text-blue-900 dark:text-blue-300">
+            <div className={`p-4 ${theme.bgLight} rounded-xl border ${theme.border}`}>
+                <label className={`block text-xs font-bold uppercase mb-1 ${theme.text}`}>Calculated Net Target</label>
+                <div className={`text-2xl font-black ${theme.textDark}`}>
                     {calcNetInModal > 0 ? '+' : ''}{calcNetInModal}
                 </div>
                 <p className="text-[10px] text-gray-400 mt-1">
                     {calcNetInModal < 0 
-                        ? "Deficit Goal: Stay negative (Green). Positive is Red." 
-                        : "Surplus Goal: Stay positive (Green). Negative is Red."}
+                        ? "Deficit Goal: Stay negative." 
+                        : "Surplus Goal: Stay positive."}
                 </p>
             </div>
 
             <button 
                 onClick={saveTargets}
-                className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-xl shadow-lg mt-2"
+                className={`w-full py-4 ${theme.bg} font-bold rounded-xl shadow-lg mt-2 active:scale-95 transition-transform`}
             >
                 Save Targets
             </button>

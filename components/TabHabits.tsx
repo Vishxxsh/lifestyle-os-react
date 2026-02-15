@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { calculateStreak, getTodayStr, getYesterdayStr } from '../utils';
+import { calculateStreak, getTodayStr, getYesterdayStr, getThemeColors } from '../utils';
 import { Settings, Bell, Zap, Trash2, Edit2, Lock, Menu, GripVertical, Check, Plus, Minus, X, Trophy, Flame } from 'lucide-react';
 import { Modal } from './Modal';
 import { HabitType, Habit, CategoryDef, FrequencyType } from '../types';
@@ -58,6 +58,8 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [catName, setCatName] = useState("");
   const [catColor, setCatColor] = useState("blue");
+
+  const theme = getThemeColors(state.user.accentColor);
 
   // --- HELPERS ---
   const requestPermission = () => {
@@ -277,7 +279,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                   {last7Days.map((date, i) => {
                       const active = isToday(date);
                       return (
-                          <div key={date} className={`flex flex-col items-center justify-center py-2 rounded-xl transition-all ${active ? 'bg-black dark:bg-white text-white dark:text-black shadow-lg scale-105' : 'text-gray-400 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
+                          <div key={date} className={`flex flex-col items-center justify-center py-2 rounded-xl transition-all ${active ? `${theme.bg} ${theme.buttonText} shadow-lg scale-105` : 'text-gray-400 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
                               <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">{getDayLetter(date)}</span>
                               <span className="text-sm font-black">{getDayNumber(date)}</span>
                           </div>
@@ -428,7 +430,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                             <button onClick={() => setLogInputValue(prev => Math.max(0, (parseInt(prev)||0) - 1).toString())} className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm active:scale-95">
                                 <Minus size={24} strokeWidth={3} />
                             </button>
-                            <button onClick={() => setLogInputValue(prev => ((parseInt(prev)||0) + 1).toString())} className="w-16 h-16 rounded-full bg-gray-900 dark:bg-white flex items-center justify-center text-white dark:text-gray-900 hover:opacity-90 transition-colors shadow-lg active:scale-95">
+                            <button onClick={() => setLogInputValue(prev => ((parseInt(prev)||0) + 1).toString())} className={`w-16 h-16 rounded-full ${theme.bg} ${theme.buttonText} flex items-center justify-center hover:opacity-90 transition-colors shadow-lg active:scale-95`}>
                                 <Plus size={24} strokeWidth={3} />
                             </button>
                        </div>
@@ -480,7 +482,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                    )}
                    <button 
                       onClick={saveLogEntry}
-                      className="flex-[2] py-5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold text-lg rounded-3xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+                      className={`flex-[2] py-5 ${theme.bg} ${theme.buttonText} font-bold text-lg rounded-3xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2`}
                    >
                        Save Entry
                    </button>
@@ -641,7 +643,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                        <Trash2 size={18} />
                    </button>
                )}
-               <button onClick={handleSaveHabit} type="button" className="flex-[3] py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-2xl shadow-lg active:scale-95 transition-transform">
+               <button onClick={handleSaveHabit} type="button" className={`flex-[3] py-4 ${theme.bg} ${theme.buttonText} font-bold rounded-2xl shadow-lg active:scale-95 transition-transform`}>
                     {editingId !== null ? "Update" : "Create"}
                </button>
            </div>
@@ -691,7 +693,7 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
                       ))}
                   </div>
               </div>
-              <button onClick={handleSaveCategory} className="w-full py-5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-2xl mt-4 shadow-lg active:scale-95 transition-transform">Save Category</button>
+              <button onClick={handleSaveCategory} className={`w-full py-5 ${theme.bg} ${theme.buttonText} font-bold rounded-2xl mt-4 shadow-lg active:scale-95 transition-transform`}>Save Category</button>
           </div>
       </Modal>
     </div>

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Edit2, Plus, TrendingUp, X, Trophy, CheckCircle2, Trash2, Menu, CreditCard, Sparkles } from 'lucide-react';
 import { Modal } from './Modal';
-import { formatCurrency } from '../utils';
+import { formatCurrency, getThemeColors } from '../utils';
 
 export const TabGoals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSettings }) => {
   const { state, addGoal, updateGoal, editGoal, deleteGoal, updateVision } = useApp();
@@ -14,6 +14,8 @@ export const TabGoals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [current, setCurrent] = useState("");
+
+  const theme = getThemeColors(state.user.accentColor);
 
   const handleOpenModal = (goal?: any) => {
     if (goal) {
@@ -115,7 +117,7 @@ export const TabGoals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
            </h3>
            <button 
             onClick={() => handleOpenModal()} 
-            className="text-xs font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+            className={`text-xs font-bold ${theme.text} ${theme.bgLight} px-3 py-1.5 rounded-full flex items-center gap-1 hover:opacity-80 transition-colors`}
            >
                <Plus size={12} /> New
            </button>
@@ -264,7 +266,7 @@ export const TabGoals: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSetti
                 <button 
                   type="button"
                   onClick={handleSubmit} 
-                  className="flex-[2] py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-2xl shadow-lg active:scale-95 transition-transform"
+                  className={`flex-[2] py-4 ${theme.bg} ${theme.buttonText} font-bold rounded-2xl shadow-lg active:scale-95 transition-transform`}
                 >
                     {editingId !== null ? "Update Card" : "Issue Card"}
                 </button>

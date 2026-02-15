@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { getTodayStr, getScoreColor, formatDateDisplay } from '../utils';
+import { getTodayStr, getScoreColor, formatDateDisplay, getThemeColors } from '../utils';
 import { ChevronLeft, ChevronRight, TrendingUp, BarChart3, Menu, Flame, Utensils, X, Check, Dumbbell, Calendar as CalendarIcon, Smile } from 'lucide-react';
 import { Meal, Workout } from '../types';
 import { Modal } from './Modal';
@@ -10,6 +10,7 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
     const { state } = useApp();
     const [viewDate, setViewDate] = useState(new Date());
     const [selectedDetailDate, setSelectedDetailDate] = useState<string | null>(null);
+    const theme = getThemeColors(state.user.accentColor);
 
     // --- Calendar Logic ---
     const getDaysInMonth = (year: number, month: number) => {
@@ -171,6 +172,18 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
         return { netCalories, avgProtein };
     }, [state.meals, state.workouts, viewDate]);
 
+    // Color Logic for Net Calories
+    const getNetColor = () => {
+        const netTarget = state.user.netCaloriesTarget || (state.user.caloriesInTarget - state.user.caloriesOutTarget);
+        if (netTarget < 0) {
+            // Deficit Goal (e.g. -500): Success is staying <= 0
+            return nutritionStats.netCalories <= 0 ? 'text-emerald-500' : 'text-red-500';
+        } else {
+            // Surplus Goal (e.g. +300): Success is staying >= 0
+            return nutritionStats.netCalories >= 0 ? 'text-emerald-500' : 'text-red-500';
+        }
+    };
+
     const getColorClasses = (color: string) => {
         // Simple background colors for bars, keeping them bright in dark mode for visibility
         const map: Record<string, string> = {
@@ -268,7 +281,7 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                 <div className="text-center mt-3 text-[10px] text-gray-400">Tap a date to view detailed logs</div>
             </div>
 
-            {/* Nutrition Insights (New Section) */}
+            {/* Nutrition Insights (Minimalistic) */}
             <div className="space-y-4">
                  <div className="flex items-center gap-2">
                     <Utensils size={16} className="text-gray-400" />
@@ -276,12 +289,12 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm flex flex-col justify-between">
-                        <div className="flex items-center gap-2 text-orange-500 mb-2">
+                        <div className={`flex items-center gap-2 mb-2 ${theme.text}`}>
                             <Flame size={20} fill="currentColor" />
                             <span className="text-xs font-bold uppercase">Net Calories</span>
                         </div>
                         <div>
-                            <span className={`text-2xl font-black ${nutritionStats.netCalories > 0 ? 'text-gray-900 dark:text-white' : 'text-emerald-500'}`}>
+                            <span className={`text-2xl font-black ${getNetColor()}`}>
                                 {nutritionStats.netCalories > 0 ? '+' : ''}{nutritionStats.netCalories}
                             </span>
                             <p className="text-[10px] text-gray-400 mt-1">Total (In - Out) this month</p>
@@ -289,7 +302,7 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                     </div>
                     
                     <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm flex flex-col justify-between">
-                        <div className="flex items-center gap-2 text-blue-500 mb-2">
+                        <div className={`flex items-center gap-2 mb-2 ${theme.text}`}>
                             <Utensils size={20} />
                             <span className="text-xs font-bold uppercase">Avg Protein</span>
                         </div>
@@ -349,7 +362,7 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                     correlationData.map((item, idx) => (
                         <div key={item.id} className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-800 shadow-sm flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-sm">
+                                <div className={`w-8 h-8 rounded-full ${theme.bgLight} ${theme.text} flex items-center justify-center font-bold text-sm`}>
                                     {idx + 1}
                                 </div>
                                 <div>
@@ -360,7 +373,7 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                                 </div>
                             </div>
                             <div className="text-right">
-                                <div className="text-lg font-black text-emerald-500">+{item.diff.toFixed(1)}</div>
+                                <div className={`text-lg font-black ${theme.text}`}>+{item.diff.toFixed(1)}</div>
                                 <div className="text-[10px] font-bold text-gray-400 uppercase">Impact</div>
                             </div>
                         </div>
@@ -405,21 +418,21 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                                          const isPartial = h.type === 'numeric' && currentVal > 0 && !h.isDone;
 
                                          return (
-                                             <div key={h.id} className={`flex items-center justify-between p-3 rounded-xl border ${h.isDone ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30' : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800'}`}>
+                                             <div key={h.id} className={`flex items-center justify-between p-3 rounded-xl border ${h.isDone ? 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700' : 'bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800'}`}>
                                                  <div className="flex items-center gap-3">
-                                                     <div className={`w-2 h-2 rounded-full ${h.isDone ? 'bg-emerald-500' : (isPartial ? 'bg-orange-400' : 'bg-gray-300 dark:bg-gray-600')}`}></div>
+                                                     <div className={`w-2 h-2 rounded-full ${h.isDone ? theme.bg : (isPartial ? 'bg-orange-400' : 'bg-gray-300 dark:bg-gray-600')}`}></div>
                                                      <span className={`text-sm font-bold ${h.isDone ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>
                                                          {h.name}
                                                      </span>
                                                  </div>
                                                  {h.type === 'checkbox' ? (
                                                      h.isDone ? (
-                                                         <Check size={16} className="text-emerald-500" />
+                                                         <Check size={16} className={theme.text} />
                                                      ) : (
                                                          <X size={16} className="text-gray-300 dark:text-gray-600" />
                                                      )
                                                  ) : (
-                                                     <span className={`text-xs font-bold ${h.isDone ? 'text-emerald-600 dark:text-emerald-400' : (currentVal > 0 ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600')}`}>
+                                                     <span className={`text-xs font-bold ${h.isDone ? theme.text : (currentVal > 0 ? 'text-orange-500' : 'text-gray-300 dark:text-gray-600')}`}>
                                                          {currentVal} / {targetVal} {h.unit}
                                                      </span>
                                                  )}
@@ -442,20 +455,20 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                              <div className="grid grid-cols-3 gap-2 mb-3 bg-gray-50 dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700/50">
                                 <div className="text-center">
                                      <div className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Net Cals</div>
-                                     <div className={`text-lg font-black ${details.dayNetCals > 0 ? 'text-gray-900 dark:text-white' : 'text-emerald-500'}`}>
+                                     <div className={`text-lg font-black ${details.dayNetCals > 0 ? 'text-gray-900 dark:text-white' : theme.text}`}>
                                         {details.dayNetCals > 0 ? '+' : ''}{details.dayNetCals}
                                      </div>
                                 </div>
                                 <div className="text-center border-l border-gray-200 dark:border-gray-700">
                                      <div className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">Protein</div>
-                                     <div className="text-lg font-black text-blue-500">
+                                     <div className={`text-lg font-black ${theme.text}`}>
                                         {details.dayProtein}g
                                      </div>
                                 </div>
                                  <div className="text-center border-l border-gray-200 dark:border-gray-700">
                                      <div className="text-[10px] font-bold text-gray-400 uppercase mb-0.5">In / Out</div>
                                      <div className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-1">
-                                        {details.dayCalsIn} / <span className="text-orange-500">{details.dayCalsOut}</span>
+                                        {details.dayCalsIn} / <span className={theme.textDark}>{details.dayCalsOut}</span>
                                      </div>
                                 </div>
                              </div>
@@ -478,9 +491,9 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                              </h3>
                              <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
                                  {details.dayWorkouts.map(w => (
-                                     <div key={w.id} className="flex justify-between items-center text-sm p-2 bg-orange-50 dark:bg-orange-900/10 rounded-lg">
+                                     <div key={w.id} className={`flex justify-between items-center text-sm p-2 rounded-lg ${theme.bgLight}`}>
                                          <span className="text-gray-700 dark:text-gray-200">{w.name}</span>
-                                         <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{w.calories} cal</span>
+                                         <span className={`text-xs font-bold ${theme.textDark}`}>{w.calories} cal</span>
                                      </div>
                                  ))}
                                  {details.dayWorkouts.length === 0 && <div className="text-xs text-gray-400 italic">No workouts logged.</div>}

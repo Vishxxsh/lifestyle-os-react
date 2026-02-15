@@ -1,27 +1,41 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { getTodayStr, formatDateDisplay } from '../utils';
-import { Check, Trash2, Plus, Utensils, Edit2, Calendar, Smile, Menu, X, Flame, GripVertical, Bell, Clock, Repeat } from 'lucide-react';
+import { getTodayStr, formatDateDisplay, getThemeColors } from '../utils';
+import { Check, Trash2, Plus, Utensils, Edit2, Calendar, Smile, Menu, X, Flame, GripVertical, Bell, Clock, Repeat, ChevronDown } from 'lucide-react';
 import { Modal } from './Modal';
+import { TodoCategoryDef } from '../types';
 
 interface TabHomeProps {
     onOpenSettings: () => void;
 }
 
-const COLORS = ['slate', 'red', 'orange', 'emerald', 'blue', 'violet', 'pink'];
+const AVAILABLE_COLORS = ['slate', 'red', 'orange', 'emerald', 'blue', 'violet', 'pink'];
 
 export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
-  const { state, addTodo, toggleTodo, deleteTodo, moveTodo, updateTodo, updateUserConfig, setDayScore, setHabitValue, addMeal, deleteMeal } = useApp();
+  const { state, addTodo, toggleTodo, deleteTodo, moveTodo, updateTodo, updateUserConfig, setDayScore, setHabitValue, addMeal, deleteMeal, addTodoCategory, updateTodoCategory, deleteTodoCategory } = useApp();
   const [newTodo, setNewTodo] = useState("");
-  const [newTodoColor, setNewTodoColor] = useState("slate");
+  // Default to first category if available
+  const [newTodoCategoryId, setNewTodoCategoryId] = useState<string>(state.todoCategories[0]?.id || "");
+  const [activeFilterId, setActiveFilterId] = useState<string>('all');
   const [draggedTodoId, setDraggedTodoId] = useState<number | null>(null);
+
+  // Todo Input State
+  const [isCatSelectorOpen, setIsCatSelectorOpen] = useState(false);
+  const catSelectorRef = useRef<HTMLDivElement>(null);
 
   // Todo Reminder Modal
   const [reminderTodoId, setReminderTodoId] = useState<number | null>(null);
   const [reminderTime, setReminderTime] = useState("");
   const [reminderInterval, setReminderInterval] = useState("");
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+
+  // Category Management Modal
+  const [isManageCatsOpen, setIsManageCatsOpen] = useState(false);
+  const [isCatEditModalOpen, setIsCatEditModalOpen] = useState(false);
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editingCatName, setEditingCatName] = useState("");
+  const [editingCatColor, setEditingCatColor] = useState("blue");
 
   // Log Day Modal State
   const [isLogDayOpen, setIsLogDayOpen] = useState(false);
@@ -42,6 +56,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
   const [tempProteinTarget, setTempProteinTarget] = useState("");
 
   const todayStr = getTodayStr();
+  const theme = getThemeColors(state.user.accentColor);
   
   // XP Calculation
   const nextLevelXP = state.user.level * 100;
@@ -65,19 +80,29 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
   // Colors based on targets
   let netColor = 'text-gray-900 dark:text-white';
   if (netTarget < 0) {
-      // Negative Target (Weight Loss) -> Green if Actual is also Negative
       netColor = netCalories <= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400';
   } else {
-      // Positive Target (Weight Gain) -> Green if Actual is also Positive
       netColor = netCalories >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400';
   }
 
-  // Day Score for today (if exists)
   const currentDayScore = state.dayScores[todayStr];
+
+  // Close selector when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (catSelectorRef.current && !catSelectorRef.current.contains(event.target as Node)) {
+            setIsCatSelectorOpen(false);
+        }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleAddTodo = () => {
     if (newTodo.trim()) {
-      addTodo(newTodo.trim(), newTodoColor);
+      const cat = state.todoCategories.find(c => c.id === newTodoCategoryId);
+      const color = cat ? cat.color : 'slate';
+      addTodo(newTodo.trim(), newTodoCategoryId || undefined, color);
       setNewTodo("");
     }
   };
@@ -99,13 +124,13 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
     setDraggedTodoId(null);
   };
 
-  const cycleTodoColor = (id: number, currentColor?: string) => {
-      const idx = COLORS.indexOf(currentColor || 'slate');
-      const nextIdx = (idx + 1) % COLORS.length;
-      updateTodo(id, { color: COLORS[nextIdx] });
-  };
+  const getTodoColorClass = (categoryId?: string, fallbackColor?: string) => {
+    let color = fallbackColor || 'slate';
+    if (categoryId) {
+        const cat = state.todoCategories.find(c => c.id === categoryId);
+        if (cat) color = cat.color;
+    }
 
-  const getColorClass = (c: string = 'slate') => {
     const map: any = {
         slate: 'border-gray-200 dark:border-gray-800',
         red: 'border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10',
@@ -115,8 +140,45 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
         violet: 'border-violet-200 dark:border-violet-900/50 bg-violet-50/50 dark:bg-violet-900/10',
         pink: 'border-pink-200 dark:border-pink-900/50 bg-pink-50/50 dark:bg-pink-900/10',
     };
-    return map[c] || map.slate;
+    return map[color] || map.slate;
   };
+
+  const getCategoryColor = (categoryId?: string) => {
+      if (!categoryId) return 'slate';
+      const cat = state.todoCategories.find(c => c.id === categoryId);
+      return cat ? cat.color : 'slate';
+  };
+  
+  const getCategoryName = (categoryId?: string) => {
+      if (!categoryId) return undefined;
+      return state.todoCategories.find(c => c.id === categoryId)?.name;
+  };
+
+  // --- Category Mgmt Handlers ---
+  const handleOpenCatEdit = (cat?: TodoCategoryDef) => {
+      if (cat) {
+          setEditingCatId(cat.id);
+          setEditingCatName(cat.name);
+          setEditingCatColor(cat.color);
+      } else {
+          setEditingCatId(null);
+          setEditingCatName("");
+          setEditingCatColor("blue");
+      }
+      setIsCatEditModalOpen(true);
+  };
+
+  const handleSaveCategory = () => {
+      if (!editingCatName) return;
+      if (editingCatId) {
+          updateTodoCategory(editingCatId, editingCatName, editingCatColor);
+      } else {
+          addTodoCategory(editingCatName, editingCatColor);
+      }
+      setIsCatEditModalOpen(false);
+  };
+
+  // ---
 
   const openProteinModal = () => {
       setTempProteinTarget(proteinTarget.toString());
@@ -230,6 +292,14 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
       setIsLogDayOpen(false);
   };
 
+  // Filter Logic
+  const filteredTodos = state.todos.filter(t => {
+      if (activeFilterId === 'all') return true;
+      return t.categoryId === activeFilterId;
+  });
+
+  const selectedCategory = state.todoCategories.find(c => c.id === newTodoCategoryId) || state.todoCategories[0];
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -245,7 +315,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
         </div>
         <button 
             onClick={openLogDay}
-            className="group relative flex items-center justify-center p-3 rounded-full bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-lg active:scale-95 transition-all"
+            className={`group relative flex items-center justify-center p-3 rounded-full ${theme.bg} ${theme.buttonText} shadow-lg active:scale-95 transition-all`}
         >
             <Calendar size={20} />
             <div className="absolute inset-0 rounded-full bg-current opacity-0 group-hover:opacity-10 transition-opacity"></div>
@@ -262,7 +332,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
                       <span className="text-sm font-bold text-gray-400">/ 10</span>
                   </div>
               </div>
-              <div className="w-12 h-12 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center">
+              <div className={`w-12 h-12 rounded-full ${theme.bgLight} ${theme.text} flex items-center justify-center`}>
                   <Smile size={24} />
               </div>
           </div>
@@ -288,7 +358,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
           <div className="bg-white dark:bg-gray-900 p-5 rounded-[2rem] shadow-ios border border-gray-100 dark:border-gray-800 relative overflow-hidden group">
               <div className="relative z-10 flex flex-col h-full justify-between">
                   <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                      <Flame size={12} className={netTarget < 0 ? 'text-emerald-500' : 'text-orange-500'} />
+                      <Flame size={12} className={theme.text} />
                       Net Energy
                   </div>
                   <div>
@@ -311,7 +381,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
               </button>
               <div className="flex flex-col h-full justify-between">
                  <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                    <Utensils size={12} className="text-blue-500" /> Protein
+                    <Utensils size={12} className={theme.text} /> Protein
                  </div>
                  <div>
                      <div className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter mb-2">
@@ -319,7 +389,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
                      </div>
                      <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                         <div 
-                            className="h-full bg-blue-500 transition-all duration-1000 ease-out rounded-full" 
+                            className={`h-full ${theme.bg} transition-all duration-1000 ease-out rounded-full`} 
                             style={{ width: `${proteinProgress}%` }}
                         ></div>
                      </div>
@@ -330,47 +400,98 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
 
       {/* Quick Missions */}
       <div>
-        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 ml-1">Quick Missions</h3>
+        <div className="flex justify-between items-center mb-4">
+             <div className="flex items-center gap-2">
+                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest ml-1">Quick Missions</h3>
+                 <button onClick={() => setIsManageCatsOpen(true)} className="p-1 rounded-full text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
+                     <Edit2 size={12} />
+                 </button>
+             </div>
+             
+             {/* Category Filter Bar */}
+             {state.todoCategories.length > 0 && (
+                 <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-[60%] pl-1">
+                     <button
+                        onClick={() => setActiveFilterId('all')}
+                        className={`text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${activeFilterId === 'all' ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}
+                     >
+                         All
+                     </button>
+                     {state.todoCategories.map(c => (
+                         <button
+                            key={c.id}
+                            onClick={() => setActiveFilterId(c.id)}
+                            className={`text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap transition-colors flex items-center gap-1 ${activeFilterId === c.id ? `bg-${c.color}-500 text-white shadow-md` : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'}`}
+                         >
+                             {c.name}
+                         </button>
+                     ))}
+                 </div>
+             )}
+        </div>
         
         {/* Input Area */}
-        <div className="flex gap-3 mb-6">
-           <div className="flex-1 bg-white dark:bg-gray-900 rounded-2xl shadow-ios p-2 flex items-center gap-2 border border-gray-100 dark:border-gray-800 focus-within:ring-2 focus-within:ring-blue-500/50 transition-all">
-               <div className="flex gap-1.5 pl-2 overflow-x-auto no-scrollbar max-w-[80px]">
-                    {COLORS.map(c => (
-                        <button
-                            key={c}
-                            onClick={() => setNewTodoColor(c)}
-                            className={`w-4 h-4 rounded-full transition-all flex-shrink-0 ${newTodoColor === c ? 'scale-125 ring-2 ring-gray-200 dark:ring-gray-700' : 'opacity-40 hover:opacity-100'} bg-${c}-500`}
-                        />
-                    ))}
-                </div>
-                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700"></div>
+        <div className="flex gap-3 mb-6 relative z-10">
+           <div className={`flex-1 bg-white dark:bg-gray-900 rounded-2xl shadow-ios p-2 flex items-center gap-2 border border-gray-100 dark:border-gray-800 focus-within:ring-2 ${theme.ring} focus-within:ring-opacity-50 transition-all`}>
+               
+               {/* Category Chip Dropdown */}
+               <div className="relative" ref={catSelectorRef}>
+                    <button
+                        onClick={() => setIsCatSelectorOpen(!isCatSelectorOpen)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase transition-all whitespace-nowrap ${selectedCategory ? `bg-${selectedCategory.color}-500 text-white shadow-sm` : 'bg-gray-200 text-gray-500'}`}
+                    >
+                        {selectedCategory ? selectedCategory.name : 'Category'}
+                        <ChevronDown size={12} strokeWidth={3} />
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    {isCatSelectorOpen && state.todoCategories.length > 0 && (
+                        <div className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 p-2 flex flex-col gap-1 z-20 animate-[fadeScale_0.2s_ease-out]">
+                            {state.todoCategories.map(c => (
+                                <button
+                                    key={c.id}
+                                    onClick={() => { setNewTodoCategoryId(c.id); setIsCatSelectorOpen(false); }}
+                                    className={`flex items-center gap-2 w-full p-2 rounded-lg text-xs font-bold transition-colors ${newTodoCategoryId === c.id ? 'bg-gray-100 dark:bg-gray-700' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
+                                >
+                                    <div className={`w-3 h-3 rounded-full bg-${c.color}-500`}></div>
+                                    <span className="text-gray-900 dark:text-white">{c.name}</span>
+                                    {newTodoCategoryId === c.id && <Check size={12} className="ml-auto text-gray-400" />}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+               </div>
+
+                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
                 <input 
                     type="text" 
                     value={newTodo}
                     onChange={(e) => setNewTodo(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddTodo()}
-                    className="flex-1 bg-transparent text-sm font-medium text-gray-900 dark:text-white placeholder-gray-400 outline-none"
+                    className="flex-1 bg-transparent text-sm font-medium text-gray-900 dark:text-white placeholder-gray-400 outline-none min-w-0"
                     placeholder="What's next?"
                 />
            </div>
            <button 
                 onClick={handleAddTodo}
-                className="w-12 h-12 bg-black dark:bg-white text-white dark:text-black rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-transform"
+                className={`w-12 h-12 ${theme.bg} ${theme.buttonText} rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-transform shrink-0`}
            >
                 <Plus size={20} strokeWidth={3} />
            </button>
         </div>
 
         <div className="space-y-3">
-          {state.todos.map(todo => (
+          {filteredTodos.map(todo => {
+            const catName = getCategoryName(todo.categoryId); // Kept for logic if needed later, but not rendered
+            
+            return (
             <div 
                 key={todo.id}
                 draggable
                 onDragStart={(e) => handleDragStart(e, todo.id)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, todo.id)}
-                className={`group relative bg-white dark:bg-gray-900 p-4 rounded-2xl shadow-sm border transition-all duration-300 active:scale-[0.98] ${getColorClass(todo.color)} ${draggedTodoId === todo.id ? 'opacity-30' : ''}`}
+                className={`group relative bg-white dark:bg-gray-900 p-4 rounded-2xl shadow-sm border transition-all duration-300 active:scale-[0.98] ${getTodoColorClass(todo.categoryId, todo.color)} ${draggedTodoId === todo.id ? 'opacity-30' : ''}`}
             >
               <div className="flex items-start gap-3">
                   <button 
@@ -388,6 +509,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
                       <div className={`text-sm font-medium leading-relaxed break-words transition-all ${todo.done ? 'text-gray-400 dark:text-gray-600 line-through decoration-2 decoration-gray-300' : 'text-gray-900 dark:text-white'}`}>
                         {todo.text}
                       </div>
+                      
                       <div className="flex flex-wrap gap-2 mt-2">
                           {todo.reminderTime && !todo.done && (
                               <div className="flex items-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-full">
@@ -421,13 +543,17 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
                   </div>
               </div>
             </div>
-          ))}
-          {state.todos.length === 0 && (
+            );
+          })}
+          
+          {filteredTodos.length === 0 && (
             <div className="text-center py-10">
                 <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-300 dark:text-gray-600">
                     <Check size={32} />
                 </div>
-                <p className="text-gray-400 text-xs font-medium">All clear for now</p>
+                <p className="text-gray-400 text-xs font-medium">
+                    {activeFilterId === 'all' ? "All clear for now" : "No missions in this category"}
+                </p>
             </div>
           )}
         </div>
@@ -451,16 +577,16 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
                   <div className="space-y-4">
                       <div className="flex justify-between items-center">
                           <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase flex items-center gap-2">
-                              <Smile size={16} className="text-blue-500" /> Daily Rating
+                              <Smile size={16} className={theme.text} /> Daily Rating
                           </label>
-                          <span className="text-3xl font-black text-blue-600 dark:text-blue-400">{dayRating}</span>
+                          <span className={`text-3xl font-black ${theme.text}`}>{dayRating}</span>
                       </div>
                       <input 
                         type="range" 
                         min="1" max="10" step="1"
                         value={dayRating}
                         onChange={(e) => setDayRating(parseInt(e.target.value))}
-                        className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer accent-blue-600 dark:accent-blue-500"
+                        className={`w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer accent-${theme.name}-600 dark:accent-${theme.name}-500`}
                       />
                       <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                           <span>Rough Day</span>
@@ -554,7 +680,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
 
                       {/* Pending Meals */}
                       {tempMeals.map((m, idx) => (
-                          <div key={idx} className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl">
+                          <div key={idx} className={`flex justify-between items-center p-3 ${theme.bgLight} border ${theme.border} rounded-2xl`}>
                               <span className="font-bold text-sm text-gray-900 dark:text-white">{m.name}</span>
                               <div className="flex items-center gap-3">
                                   <span className="text-[10px] text-gray-400">{m.cal} cal, {m.pro}g</span>
@@ -571,7 +697,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
                             type="text" 
                             list="meal-history-logday"
                             placeholder="Add food name..." 
-                            className="w-full p-3 bg-white dark:bg-gray-900 rounded-xl text-sm font-medium outline-none border border-transparent focus:border-blue-500 transition-colors mb-2"
+                            className={`w-full p-3 bg-white dark:bg-gray-900 rounded-xl text-sm font-medium outline-none border border-transparent ${theme.ring} transition-colors mb-2`}
                             value={newMealName}
                             onChange={handleMealNameChange}
                         />
@@ -607,7 +733,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
 
               <button 
                  onClick={saveDayLog}
-                 className="w-full py-5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold text-lg rounded-3xl shadow-lg active:scale-95 transition-transform"
+                 className={`w-full py-5 ${theme.bg} ${theme.buttonText} font-bold text-lg rounded-3xl shadow-lg active:scale-95 transition-transform`}
               >
                   Save Entry
               </button>
@@ -622,7 +748,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
                   <div className="flex items-baseline gap-1">
                     <input 
                         type="number"
-                        className="w-32 bg-transparent text-center text-5xl font-black text-gray-900 dark:text-white outline-none border-b-2 border-transparent focus:border-blue-500 transition-colors"
+                        className={`w-32 bg-transparent text-center text-5xl font-black text-gray-900 dark:text-white outline-none border-b-2 border-transparent ${theme.ring} transition-colors`}
                         placeholder="150" 
                         value={tempProteinTarget} 
                         onChange={e => setTempProteinTarget(e.target.value)} 
@@ -636,7 +762,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
               </p>
               <button 
                   onClick={saveProteinTarget}
-                  className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-3xl shadow-lg active:scale-95 transition-transform"
+                  className={`w-full py-5 ${theme.bg} ${theme.buttonText} font-bold rounded-3xl shadow-lg active:scale-95 transition-transform`}
               >
                   Update Target
               </button>
@@ -647,7 +773,7 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
       <Modal isOpen={isReminderModalOpen} onClose={() => setIsReminderModalOpen(false)} title="Set Reminder">
           <div className="space-y-6">
                <div className="grid grid-cols-2 gap-4">
-                 <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-3xl border border-blue-100 dark:border-blue-900/30">
+                 <div className={`bg-blue-50 dark:bg-blue-900/10 p-4 rounded-3xl border border-blue-100 dark:border-blue-900/30`}>
                     <label className="block text-xs font-bold text-blue-500 uppercase mb-2 flex items-center gap-1">
                         <Clock size={12} /> Specific Time
                     </label>
@@ -687,11 +813,66 @@ export const TabHome: React.FC<TabHomeProps> = ({ onOpenSettings }) => {
                    )}
                    <button 
                        onClick={saveReminder}
-                       className="flex-[2] py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-bold rounded-2xl shadow-lg active:scale-95 transition-transform"
+                       className={`flex-[2] py-4 ${theme.bg} ${theme.buttonText} font-bold rounded-2xl shadow-lg active:scale-95 transition-transform`}
                    >
                        Save Alarm
                    </button>
                </div>
+          </div>
+      </Modal>
+
+      {/* --- CATEGORY MANAGEMENT MODALS --- */}
+      <Modal isOpen={isManageCatsOpen} onClose={() => setIsManageCatsOpen(false)} title="Mission Categories">
+          <div className="space-y-4">
+              <div className="space-y-2">
+                  {state.todoCategories.map(c => (
+                      <div key={c.id} className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl">
+                          <div className="flex items-center gap-3">
+                              <div className={`w-4 h-4 rounded-full bg-${c.color}-500 shadow-sm`}></div>
+                              <span className="font-bold text-gray-900 dark:text-white">{c.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                              <button onClick={() => { setIsManageCatsOpen(false); handleOpenCatEdit(c); }} className="p-2 text-gray-400 hover:text-gray-900 dark:hover:text-white">
+                                  <Edit2 size={16} />
+                              </button>
+                              <button 
+                                onClick={() => { if(confirm("Delete category?")) deleteTodoCategory(c.id); }} 
+                                className="p-2 text-gray-400 hover:text-red-500"
+                              >
+                                  <Trash2 size={16} />
+                              </button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+              <button 
+                  onClick={() => { setIsManageCatsOpen(false); handleOpenCatEdit(); }}
+                  className="w-full py-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl text-gray-400 font-bold hover:border-gray-900 dark:hover:border-white transition-all"
+              >
+                  + New Category
+              </button>
+          </div>
+      </Modal>
+
+      <Modal isOpen={isCatEditModalOpen} onClose={() => setIsCatEditModalOpen(false)} title={editingCatId ? "Edit Category" : "New Category"}>
+          <div className="space-y-6">
+              <div>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2">Name</label>
+                  <input className="w-full p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl border-none focus:ring-2 focus:ring-gray-900 dark:focus:ring-white text-gray-900 dark:text-white font-bold" value={editingCatName} onChange={e => setEditingCatName(e.target.value)} placeholder="e.g. Work" />
+              </div>
+              <div>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-3">Color</label>
+                  <div className="flex flex-wrap gap-3">
+                      {AVAILABLE_COLORS.map(color => (
+                          <button key={color} onClick={() => setEditingCatColor(color)} className={`w-12 h-12 rounded-full flex items-center justify-center relative transition-transform ${editingCatColor === color ? 'scale-110 ring-4 ring-gray-100 dark:ring-gray-800' : ''}`}>
+                            <div className={`w-full h-full rounded-full bg-${color}-500 shadow-md`}></div>
+                          </button>
+                      ))}
+                  </div>
+              </div>
+              <button onClick={handleSaveCategory} className={`w-full py-5 ${theme.bg} ${theme.buttonText} font-bold rounded-2xl mt-4 shadow-lg active:scale-95 transition-transform`}>
+                  Save Category
+              </button>
           </div>
       </Modal>
     </div>

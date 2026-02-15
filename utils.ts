@@ -212,3 +212,57 @@ export const getCompletionRate = (state: AppState): number => {
 
   return Math.round((completed / habits.length) * 100);
 };
+
+export const getThemeColors = (color: string) => {
+  const c = color || 'blue';
+
+  if (c === 'black') {
+      return {
+          bg: 'bg-gray-900 dark:bg-white', // Primary buttons (Black in light, White in dark)
+          bgLight: 'bg-gray-100 dark:bg-gray-800',
+          text: 'text-gray-900 dark:text-white',
+          textDark: 'text-black dark:text-white',
+          border: 'border-gray-900 dark:border-white',
+          ring: 'focus:ring-gray-900 dark:focus:ring-white',
+          buttonText: 'text-white dark:text-gray-900', // Inverts for contrast
+          name: 'gray' 
+      };
+  }
+
+  if (c === 'white') {
+      return {
+          bg: 'bg-white border border-gray-200 shadow-sm dark:bg-gray-100', // White button
+          bgLight: 'bg-gray-50 dark:bg-gray-800',
+          text: 'text-gray-700 dark:text-gray-300', 
+          textDark: 'text-black dark:text-white',
+          border: 'border-gray-200 dark:border-gray-700',
+          ring: 'focus:ring-gray-300',
+          buttonText: 'text-gray-900', // Dark text on white button
+          name: 'slate'
+      };
+  }
+
+  if (c === 'gold') {
+      return {
+        bg: `bg-amber-500`,
+        bgLight: `bg-amber-50 dark:bg-amber-900/20`,
+        text: `text-amber-600 dark:text-amber-400`,
+        textDark: `text-amber-700 dark:text-amber-300`,
+        border: `border-amber-200 dark:border-amber-800`,
+        ring: `focus:ring-amber-500`,
+        buttonText: 'text-white',
+        name: 'amber'
+      };
+  }
+
+  return {
+    bg: `bg-${c}-600`, // Primary buttons
+    bgLight: `bg-${c}-50 dark:bg-${c}-900/20`, // Light backgrounds
+    text: `text-${c}-600 dark:text-${c}-400`, // Primary text
+    textDark: `text-${c}-700 dark:text-${c}-300`, // Darker text
+    border: `border-${c}-200 dark:border-${c}-800`,
+    ring: `focus:ring-${c}-500`,
+    buttonText: 'text-white',
+    name: c
+  };
+};

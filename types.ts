@@ -5,6 +5,12 @@ export interface CategoryDef {
   color: string; // e.g. 'red', 'blue', 'green', 'purple'
 }
 
+export interface TodoCategoryDef {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export type HabitType = 'checkbox' | 'numeric';
 export type FrequencyType = 'daily' | 'weekly' | 'monthly';
 
@@ -29,7 +35,8 @@ export interface Todo {
   id: number;
   text: string;
   done: boolean;
-  color?: string; // New: Color coding for priorities/categories
+  categoryId?: string; // Link to TodoCategoryDef
+  color?: string; // Legacy fallback
   reminderTime?: string; // Optional reminder time "HH:MM"
   reminderInterval?: number; // Optional reminder interval in minutes
 }
@@ -94,7 +101,8 @@ export interface FoodHistoryItem {
 
 export interface AppState {
   user: UserState;
-  categories: CategoryDef[];
+  categories: CategoryDef[]; // For Habits
+  todoCategories: TodoCategoryDef[]; // For Quick Missions
   habits: Habit[];
   todos: Todo[];
   goals: Goal[];
@@ -137,6 +145,11 @@ export const INITIAL_STATE: AppState = {
     { id: 'str', name: 'Strength', color: 'red' },
     { id: 'int', name: 'Intellect', color: 'blue' },
     { id: 'vit', name: 'Vitality', color: 'emerald' },
+  ],
+  todoCategories: [
+    { id: 'work', name: 'Work', color: 'blue' },
+    { id: 'personal', name: 'Personal', color: 'emerald' },
+    { id: 'family', name: 'Family', color: 'orange' },
   ],
   habits: [],
   todos: [],

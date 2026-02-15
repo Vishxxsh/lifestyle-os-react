@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { AppState, INITIAL_STATE, Habit, Todo, Meal, Workout, Goal, CategoryDef, HabitType, UserState, FrequencyType } from '../types';
+import { AppState, INITIAL_STATE, Habit, Todo, Meal, Workout, Goal, CategoryDef, TodoCategoryDef, HabitType, UserState, FrequencyType } from '../types';
 
 interface AppContextType {
   state: AppState;
@@ -15,12 +15,17 @@ interface AppContextType {
   // Day Score
   setDayScore: (date: string, score: number) => void;
 
-  // Category Mgmt
+  // Habit Category Mgmt
   addCategory: (name: string, color: string) => void;
   updateCategory: (id: string, name: string, color: string) => void;
   deleteCategory: (id: string) => void;
 
-  addTodo: (text: string, color?: string) => void;
+  // Todo Category Mgmt
+  addTodoCategory: (name: string, color: string) => void;
+  updateTodoCategory: (id: string, name: string, color: string) => void;
+  deleteTodoCategory: (id: string) => void;
+
+  addTodo: (text: string, categoryId?: string, color?: string) => void;
   toggleTodo: (id: number) => void;
   deleteTodo: (id: number) => void;
   moveTodo: (activeId: number, overId: number) => void;
@@ -59,19 +64,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [fabOnClick, setFabAction] = useState<(() => void) | null>(null);
 
   // Central Migration Logic
-  // This ensures that whether we load from LocalStorage OR Import a file, 
-  // the data is always upgraded to match the current app structure.
   const migrateData = (data: any): AppState => {
-      // 1. Merge User Config with Defaults to handle missing keys
       const mergedUser = { ...INITIAL_STATE.user, ...(data.user || {}) };
       
-      // 2. Create Base State
       const newState: AppState = {
           ...INITIAL_STATE,
-          ...data, // Overwrite with imported data
+          ...data,
           user: mergedUser,
-          // Ensure Arrays/Objects exist
           categories: data.categories || INITIAL_STATE.categories,
+          // Migration: Ensure todoCategories exists
+          todoCategories: data.todoCategories || INITIAL_STATE.todoCategories,
           dayScores: data.dayScores || {},
           logs: data.logs || {},
           meals: data.meals || {},
@@ -83,47 +85,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           vision: data.vision || ""
       };
 
-      // 3. Category Migrations
       if (newState.categories.length === 0) {
           newState.categories = INITIAL_STATE.categories;
       }
 
-      // 4. Habit Migrations
       newState.habits = newState.habits.map((h: any) => ({
           ...h,
-          // Handle legacy field names if any
           categoryId: h.categoryId || h.category,
           frequency: h.frequency || 'daily',
           frequencyGoal: h.frequencyGoal || 1,
           unit: h.unit || (h.type === 'numeric' ? 'units' : undefined),
           isCalorieBurner: h.isCalorieBurner || false,
-          // Ensure ID is a number (legacy might be string)
           id: Number(h.id)
       }));
-
-      // 5. Specific User Settings Migrations
-      if (newState.user.backgroundKeepAlive === undefined) newState.user.backgroundKeepAlive = false;
-      
-      if (!newState.user.proteinTarget) newState.user.proteinTarget = 150;
-
-      // Calorie Targets
-      if (!newState.user.caloriesInTarget) newState.user.caloriesInTarget = 2000;
-      if (!newState.user.caloriesOutTarget) newState.user.caloriesOutTarget = 500;
-      if (!newState.user.netCaloriesTarget) newState.user.netCaloriesTarget = 1500;
-
-      // Sound
-      if (newState.user.alarmDuration === undefined) newState.user.alarmDuration = 30;
-      if (newState.user.chimeDuration === undefined) newState.user.chimeDuration = 5;
-      if (!newState.user.soundType) newState.user.soundType = 'modern';
-
-      // DND
-      if (!newState.user.dndStartTime) newState.user.dndStartTime = "23:00";
-      if (!newState.user.dndEndTime) newState.user.dndEndTime = "07:00";
 
       return newState;
   };
 
-  // Load from local storage on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -139,7 +117,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Save to local storage on change
   useEffect(() => {
     if (loaded) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -222,12 +199,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
            xp = Math.max(0, xp - xpAmount);
       }
 
-      // --- Workout Logic ---
       let newWorkouts = { ...prev.workouts };
       if (habit.isCalorieBurner) {
           const dayWorkouts = newWorkouts[date] || [];
           if (newVal && manualCalories !== undefined && manualCalories > 0) {
-              // Remove old if exists (unlikely in toggle but safe)
               const others = dayWorkouts.filter(w => w.linkedHabitId !== habit.id);
               others.push({
                   id: Date.now(),
@@ -237,7 +212,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               });
               newWorkouts[date] = others;
           } else if (!newVal) {
-              // If unchecking, remove the workout log
               newWorkouts[date] = dayWorkouts.filter(w => w.linkedHabitId !== habit.id);
           }
       }
@@ -252,8 +226,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const incrementHabit = (id: number, date: string, amount: number) => {
-    // Note: incrementHabit doesn't support manualCalories easily because it's a relative change. 
-    // Usually only used for Quick Add. If isCalorieBurner, user should use the Modal (setHabitValue) to enter total calories.
     setState(prev => {
       const habit = prev.habits.find(h => h.id === id);
       if (!habit) return prev;
@@ -301,8 +273,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const dayLogs = prev.logs[date] || {};
         const oldValue = dayLogs[id];
         
-        // --- Calculate XP Change ---
-        // (Only if value changed, but we always process calorie updates if manualCalories passed)
         let xpChange = 0;
         let shouldUpdateXP = oldValue !== value;
 
@@ -337,16 +307,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             [date]: { ...dayLogs, [id]: value }
         };
 
-        // --- Workout Logic ---
         let newWorkouts = { ...prev.workouts };
         if (habit.isCalorieBurner) {
             const dayWorkouts = newWorkouts[date] || [];
-            
-            // Is it active?
             const isActive = habit.type === 'checkbox' ? !!value : (value as number) > 0;
 
             if (isActive && manualCalories !== undefined) {
-                 // Add/Update Workout
                  const others = dayWorkouts.filter(w => w.linkedHabitId !== habit.id);
                  if (manualCalories > 0) {
                     others.push({
@@ -358,7 +324,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                  }
                  newWorkouts[date] = others;
             } else if (!isActive) {
-                 // Remove Workout if cleared
                  newWorkouts[date] = dayWorkouts.filter(w => w.linkedHabitId !== habit.id);
             }
         }
@@ -370,18 +335,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const recalculateXP = () => {
       setState(prev => {
           let totalAccumulatedXP = 0;
-
-          // Iterate over all logs in history
           Object.keys(prev.logs).forEach(date => {
               const dayLogs = prev.logs[date];
               Object.keys(dayLogs).forEach(habitIdStr => {
                   const habitId = parseInt(habitIdStr);
                   const val = dayLogs[habitId];
                   const habit = prev.habits.find(h => h.id === habitId);
-
                   if (habit) {
                       const reward = habit.xpReward || (habit.type === 'checkbox' ? 10 : 1);
-                      
                       if (habit.type === 'checkbox') {
                           if (!!val) totalAccumulatedXP += reward;
                       } else if (habit.type === 'numeric') {
@@ -393,7 +354,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           let newLevel = 1;
           let currentXP = totalAccumulatedXP;
-
           while (currentXP >= newLevel * 100) {
               currentXP -= newLevel * 100;
               newLevel++;
@@ -401,11 +361,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           return {
               ...prev,
-              user: {
-                  ...prev.user,
-                  level: newLevel,
-                  xp: currentXP
-              }
+              user: { ...prev.user, level: newLevel, xp: currentXP }
           };
       });
   };
@@ -417,7 +373,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
   };
 
-  // --- Category Mgmt ---
+  // --- Habit Category Mgmt ---
   const addCategory = (name: string, color: string) => {
     setState(prev => ({
       ...prev,
@@ -439,11 +395,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  // --- Todos ---
-  const addTodo = (text: string, color: string = 'slate') => {
+  // --- Todo Category Mgmt ---
+  const addTodoCategory = (name: string, color: string) => {
     setState(prev => ({
       ...prev,
-      todos: [{ id: Date.now(), text, done: false, color }, ...prev.todos]
+      todoCategories: [...prev.todoCategories, { id: Date.now().toString(), name, color }]
+    }));
+  };
+
+  const updateTodoCategory = (id: string, name: string, color: string) => {
+    setState(prev => ({
+      ...prev,
+      todoCategories: prev.todoCategories.map(c => c.id === id ? { ...c, name, color } : c)
+    }));
+  };
+
+  const deleteTodoCategory = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      todoCategories: prev.todoCategories.filter(c => String(c.id) !== String(id)),
+      // Reset categories of deleted todos or leave them? 
+      // Safe to leave them, UI will handle unknown categories
+    }));
+  };
+
+
+  // --- Todos ---
+  const addTodo = (text: string, categoryId?: string, color: string = 'slate') => {
+    setState(prev => ({
+      ...prev,
+      todos: [{ id: Date.now(), text, done: false, categoryId, color }, ...prev.todos]
     }));
   };
 
@@ -482,13 +463,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
   };
 
-  // --- Meals ---
   const addMeal = (name: string, calories: number, protein: number, date: string) => {
     setState(prev => {
       const dayMeals = prev.meals[date] || [];
       const newMeals = [...dayMeals, { id: Date.now(), name, calories, protein }];
       const newHistory = { ...prev.foodHistory, [name]: { calories, protein } };
-
       return {
         ...prev,
         meals: { ...prev.meals, [date]: newMeals },
@@ -507,7 +486,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
      });
   };
 
-  // --- Workouts ---
   const addWorkout = (name: string, calories: number, date: string) => {
     setState(prev => {
       const dayWorkouts = prev.workouts?.[date] || [];
@@ -529,7 +507,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // --- Goals ---
   const addGoal = (name: string, target: number, current: number) => {
     setState(prev => ({
       ...prev,
@@ -576,20 +553,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const importData = (jsonStr: string): boolean => {
       try {
           const parsed = JSON.parse(jsonStr);
-          // Basic validation to ensure it's at least an object
           if (!parsed || typeof parsed !== 'object') {
               alert("Invalid backup file format.");
               return false;
           }
-          
-          // Run migration to fill in any missing gaps from old versions
           const migratedData = migrateData(parsed);
-          
           setState(migratedData);
-          
-          // Force save to persistence layer immediately
           localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedData));
-          
           return true;
       } catch (e) {
           console.error(e);
@@ -618,6 +588,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addCategory,
       updateCategory,
       deleteCategory,
+      addTodoCategory,
+      updateTodoCategory,
+      deleteTodoCategory,
       addTodo,
       toggleTodo,
       deleteTodo,
