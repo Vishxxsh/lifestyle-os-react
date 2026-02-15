@@ -93,7 +93,7 @@ const generateNotificationImage = (text: string) => {
     return canvas.toDataURL('image/png');
 };
 
-// --- Background Audio Keeper ---
+// --- Background Audio Keeper (Fixed) ---
 // 1-second silent MP3
 const SILENT_AUDIO_URL = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
@@ -108,7 +108,6 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
 
         const startPlayback = async () => {
             try {
-                // Ensure audio is ready
                 // Volume must be non-zero for Android to show media controls
                 audio.volume = 0.05; 
                 audio.loop = true;
@@ -118,27 +117,27 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
                 setIsBlocked(false);
                 
                 if ('mediaSession' in navigator) {
-                    // Use generated image to avoid network fetch failures for the icon
                     const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
 
                     navigator.mediaSession.metadata = new MediaMetadata({
                         title: 'LifestyleOS',
-                        artist: 'Background Service',
-                        album: 'Keep-Alive Active',
+                        artist: 'Focus Mode Active',
+                        album: 'Keep-Alive Service',
                         artwork: [
                             { src: artworkImage, sizes: '512x512', type: 'image/png' }
                         ]
                     });
                     
-                    // Dummy handlers to satisfy Android Media Controls
+                    // Dummy handlers are REQUIRED for the "Media Player" to stay in the notification shade
                     const noop = () => {};
                     navigator.mediaSession.setActionHandler('play', () => { audio.play(); });
-                    navigator.mediaSession.setActionHandler('pause', () => { /* Prevent pause to keep alive */ audio.play(); });
+                    navigator.mediaSession.setActionHandler('pause', () => { 
+                         // IMPORTANT: If user hits pause, immediately play again to keep alive
+                         audio.play(); 
+                    });
                     navigator.mediaSession.setActionHandler('stop', noop);
                     navigator.mediaSession.setActionHandler('previoustrack', noop);
                     navigator.mediaSession.setActionHandler('nexttrack', noop);
-                    navigator.mediaSession.setActionHandler('seekbackward', noop);
-                    navigator.mediaSession.setActionHandler('seekforward', noop);
                     
                     navigator.mediaSession.playbackState = 'playing';
                 }
@@ -159,8 +158,10 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
         }
         
         return () => {
-            // Cleanup on unmount or toggle off
-            if (audio) audio.pause();
+            // Only pause if we are actually turning it off, not just re-rendering
+            if (!state.user.backgroundKeepAlive && audio) {
+                audio.pause();
+            }
         };
     }, [state.user.backgroundKeepAlive, onBlocked]);
 
@@ -182,12 +183,10 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
         // Capture logic on next interaction
         window.addEventListener('click', handleInteraction, { once: true });
         window.addEventListener('touchstart', handleInteraction, { once: true });
-        window.addEventListener('keydown', handleInteraction, { once: true });
         
         return () => {
             window.removeEventListener('click', handleInteraction);
             window.removeEventListener('touchstart', handleInteraction);
-            window.removeEventListener('keydown', handleInteraction);
         };
     }, [isBlocked, state.user.backgroundKeepAlive]);
 
@@ -196,12 +195,19 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
             ref={audioRef} 
             src={SILENT_AUDIO_URL} 
             loop 
-            className="hidden" 
+            // FIXED: Do not use hidden. Use style to make it invisible but rendered.
+            style={{ 
+                opacity: 0, 
+                position: 'absolute', 
+                pointerEvents: 'none',
+                zIndex: -1,
+                height: 0,
+                width: 0
+            }}
             playsInline
         />
     );
 };
-
 const NotificationManager: React.FC<{ 
     onNotify: (title: string, msg: string) => void,
     onAlarmStart: (title: string, msg: string, id?: number, type?: 'habit' | 'todo') => void
