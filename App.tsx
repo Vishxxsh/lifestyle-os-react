@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TabHome } from './components/TabHome';
 import { TabHabits } from './components/TabHabits';
@@ -8,6 +8,16 @@ import { TabReports } from './components/TabReports';
 import { SettingsModal } from './components/SettingsModal';
 import { Home, CheckSquare, Utensils, Target, BarChart3, Plus, X, Bell, AlarmClock } from 'lucide-react';
 import { getTodayStr, getThemeColors } from './utils';
+
+// Add type definition for global window object
+declare global {
+  interface Window {
+    lifestyleAudio?: {
+      enable: () => void;
+      disable: () => void;
+    }
+  }
+}
 
 // Toast Component
 const Toast: React.FC<{ title: string; message: string; onClose: () => void }> = ({ title, message, onClose }) => {
@@ -93,18 +103,40 @@ const generateNotificationImage = (text: string) => {
 };
 
 // --- Background Audio Keeper ---
-// Robust Silent MP3 (Longer duration helps with some Android schedulers)
 const SILENT_MP3 = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 const BackgroundAudioKeeper: React.FC = () => {
     const { state } = useApp();
     const audioRef = useRef<HTMLAudioElement>(null);
-    const [status, setStatus] = useState<'idle' | 'playing' | 'error'>('idle');
+    
+    // Expose control to window for synchronous triggering from SettingsModal
+    useLayoutEffect(() => {
+        window.lifestyleAudio = {
+            enable: async () => {
+                const audio = audioRef.current;
+                if (!audio) return;
+                
+                try {
+                    audio.currentTime = 0;
+                    audio.volume = 1.0;
+                    await audio.play();
+                    setupMediaSession();
+                } catch (e) {
+                    console.error("Audio enable failed", e);
+                }
+            },
+            disable: () => {
+                 const audio = audioRef.current;
+                 if (audio) audio.pause();
+                 if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+            }
+        };
+        return () => { window.lifestyleAudio = undefined; };
+    }, []);
 
-    // Setup Media Session
-    const updateMediaSession = useCallback(() => {
+    const setupMediaSession = () => {
         if ('mediaSession' in navigator) {
-            const artworkImage = generateNotificationImage("Background Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
+            const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
 
             navigator.mediaSession.metadata = new MediaMetadata({
                 title: 'LifestyleOS Active',
@@ -115,90 +147,56 @@ const BackgroundAudioKeeper: React.FC = () => {
                 ]
             });
 
-            const play = async () => { 
-                if(audioRef.current) {
-                    try { await audioRef.current.play(); } catch(e) {}
-                }
-            };
+            // Action handlers required for Android notification to show
+            const noop = () => {};
+            const forcePlay = () => { if(audioRef.current) audioRef.current.play(); };
 
-            navigator.mediaSession.setActionHandler('play', play);
-            navigator.mediaSession.setActionHandler('pause', play); // Prevent pausing
-            navigator.mediaSession.setActionHandler('stop', play);
-            navigator.mediaSession.setActionHandler('previoustrack', play);
-            navigator.mediaSession.setActionHandler('nexttrack', play);
+            navigator.mediaSession.setActionHandler('play', forcePlay);
+            navigator.mediaSession.setActionHandler('pause', forcePlay); // Don't let them pause
+            navigator.mediaSession.setActionHandler('stop', noop);
+            navigator.mediaSession.setActionHandler('previoustrack', noop);
+            navigator.mediaSession.setActionHandler('nexttrack', noop);
+            navigator.mediaSession.playbackState = 'playing';
         }
-    }, []);
+    };
 
-    const attemptPlay = useCallback(async () => {
-        const audio = audioRef.current;
-        if (!audio) return;
-
-        try {
-            audio.volume = 1.0;
-            await audio.play();
-            setStatus('playing');
-            updateMediaSession();
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = 'playing';
-            }
-        } catch (err) {
-            console.warn("Autoplay prevented, waiting for interaction");
-            setStatus('error');
-        }
-    }, [updateMediaSession]);
-
-    // Effect: Toggle Playback based on User Config
+    // Effect: Keep alive check (Redundant fallback)
     useEffect(() => {
         if (state.user.backgroundKeepAlive) {
-            attemptPlay();
-        } else {
-            if (audioRef.current) {
-                audioRef.current.pause();
-                setStatus('idle');
-            }
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = 'none';
-            }
-        }
-    }, [state.user.backgroundKeepAlive, attemptPlay]);
-
-    // Effect: Global Interaction Listener
-    useEffect(() => {
-        if (!state.user.backgroundKeepAlive) return;
-
-        const handleInteraction = () => {
-            if (audioRef.current && (audioRef.current.paused || status !== 'playing')) {
-                attemptPlay();
-            }
-        };
-
-        const events = ['click', 'touchstart', 'scroll', 'keydown'];
-        events.forEach(evt => window.addEventListener(evt, handleInteraction, { capture: true, passive: true }));
-        return () => events.forEach(evt => window.removeEventListener(evt, handleInteraction));
-    }, [state.user.backgroundKeepAlive, status, attemptPlay]);
-
-    // KeepAlive Loop: Ensure playbackState is always 'playing' if enabled
-    useEffect(() => {
-        if (!state.user.backgroundKeepAlive) return;
-        
-        const interval = setInterval(() => {
-            if (audioRef.current && !audioRef.current.paused) {
-                 if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== 'playing') {
+            const interval = setInterval(() => {
+                if(audioRef.current && audioRef.current.paused) {
+                    audioRef.current.play().catch(() => {});
+                }
+                if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== 'playing') {
                      navigator.mediaSession.playbackState = 'playing';
-                 }
-            }
-        }, 5000);
-        return () => clearInterval(interval);
+                }
+            }, 5000);
+            return () => clearInterval(interval);
+        }
     }, [state.user.backgroundKeepAlive]);
 
-    // Render: 1px opacity 0.01 to force rendering in viewport
+    // Effect: Global Interaction Listener as backup
+    useEffect(() => {
+        if (!state.user.backgroundKeepAlive) return;
+        const handleInteraction = () => {
+            if (audioRef.current && audioRef.current.paused) {
+                audioRef.current.play().then(() => setupMediaSession()).catch(() => {});
+            }
+        };
+        window.addEventListener('touchstart', handleInteraction, { capture: true, passive: true });
+        window.addEventListener('click', handleInteraction, { capture: true, passive: true });
+        return () => {
+            window.removeEventListener('touchstart', handleInteraction);
+            window.removeEventListener('click', handleInteraction);
+        };
+    }, [state.user.backgroundKeepAlive]);
+
     return (
         <audio 
             ref={audioRef} 
             src={SILENT_MP3} 
             loop 
             playsInline
-            controls // Hidden visually but useful for some browser heuristics
             style={{ 
                 position: 'fixed', 
                 bottom: 0, 

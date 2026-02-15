@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Modal } from './Modal';
@@ -308,7 +307,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     </div>
                 </button>
                  <button 
-                    onClick={() => updateUserConfig({ backgroundKeepAlive: !state.user.backgroundKeepAlive })}
+                    onClick={() => {
+                        const newState = !state.user.backgroundKeepAlive;
+                        updateUserConfig({ backgroundKeepAlive: newState });
+                        // CRITICAL: Trigger play immediately on User Click to satisfy browser autoplay policy
+                        if (newState) {
+                            window.lifestyleAudio?.enable();
+                        } else {
+                            window.lifestyleAudio?.disable();
+                        }
+                    }}
                     className="w-full flex items-center justify-between p-4"
                 >
                     <div className="flex items-center gap-2">
