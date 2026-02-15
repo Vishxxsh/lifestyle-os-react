@@ -67,106 +67,140 @@ const AlarmOverlay: React.FC<{ title: string; body: string; onDismiss: () => voi
 // Generate a simple dynamic image for notification banner
 const generateNotificationImage = (text: string) => {
     const canvas = document.createElement('canvas');
-    canvas.width = 600;
-    canvas.height = 300;
+    canvas.width = 512;
+    canvas.height = 512;
     const ctx = canvas.getContext('2d');
     if (!ctx) return undefined;
 
     // Background
-    const gradient = ctx.createLinearGradient(0, 0, 600, 300);
+    const gradient = ctx.createLinearGradient(0, 0, 0, 512);
     gradient.addColorStop(0, '#111827'); // gray-900
-    gradient.addColorStop(1, '#374151'); // gray-700
+    gradient.addColorStop(1, '#000000'); // black
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 600, 300);
+    ctx.fillRect(0, 0, 512, 512);
 
     // Text
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 40px sans-serif';
+    ctx.font = 'bold 60px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText("LifestyleOS", 300, 100);
+    ctx.fillText("LifestyleOS", 256, 200);
 
-    ctx.fillStyle = '#60A5FA'; // blue-400
-    ctx.font = 'bold 30px sans-serif';
-    ctx.fillText(text, 300, 180);
+    ctx.fillStyle = '#4ADE80'; // emerald-400
+    ctx.font = 'bold 40px sans-serif';
+    ctx.fillText(text, 256, 300);
 
     return canvas.toDataURL('image/png');
 };
 
 // --- Background Audio Keeper ---
+// 1-second silent MP3
 const SILENT_AUDIO_URL = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjU0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASAAAAAAAasqkxAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
-const BackgroundAudioKeeper = () => {
+const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked }) => {
     const { state } = useApp();
-    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const [isBlocked, setIsBlocked] = useState(false);
 
     useEffect(() => {
-        if (!audioRef.current) {
-            const audio = new Audio(SILENT_AUDIO_URL);
-            audio.loop = true;
-            audio.volume = 0.05; 
-            document.body.appendChild(audio); 
-            audioRef.current = audio;
-        }
-
         const audio = audioRef.current;
-        const updateMediaSession = () => {
-             if ('mediaSession' in navigator) {
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: 'LifestyleOS Monitor',
-                    artist: 'Background Service',
-                    album: 'Alarms Active',
-                    artwork: [
-                        { src: 'https://api.iconify.design/lucide:activity.svg?color=%23ffffff', sizes: '96x96', type: 'image/svg+xml' },
-                        { src: 'https://api.iconify.design/lucide:activity.svg?color=%23ffffff', sizes: '128x128', type: 'image/svg+xml' },
-                        { src: 'https://api.iconify.design/lucide:activity.svg?color=%23ffffff', sizes: '192x192', type: 'image/svg+xml' },
-                        { src: 'https://api.iconify.design/lucide:activity.svg?color=%23ffffff', sizes: '512x512', type: 'image/svg+xml' },
-                    ]
-                });
-                navigator.mediaSession.setActionHandler('play', () => {
-                    audio.play();
+        if (!audio) return;
+
+        const startPlayback = async () => {
+            try {
+                // Ensure audio is ready
+                // Volume must be non-zero for Android to show media controls
+                audio.volume = 0.05; 
+                audio.loop = true;
+                
+                await audio.play();
+                
+                setIsBlocked(false);
+                
+                if ('mediaSession' in navigator) {
+                    // Use generated image to avoid network fetch failures for the icon
+                    const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
+
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: 'LifestyleOS',
+                        artist: 'Background Service',
+                        album: 'Keep-Alive Active',
+                        artwork: [
+                            { src: artworkImage, sizes: '512x512', type: 'image/png' }
+                        ]
+                    });
+                    
+                    // Dummy handlers to satisfy Android Media Controls
+                    const noop = () => {};
+                    navigator.mediaSession.setActionHandler('play', () => { audio.play(); });
+                    navigator.mediaSession.setActionHandler('pause', () => { /* Prevent pause to keep alive */ audio.play(); });
+                    navigator.mediaSession.setActionHandler('stop', noop);
+                    navigator.mediaSession.setActionHandler('previoustrack', noop);
+                    navigator.mediaSession.setActionHandler('nexttrack', noop);
+                    navigator.mediaSession.setActionHandler('seekbackward', noop);
+                    navigator.mediaSession.setActionHandler('seekforward', noop);
+                    
                     navigator.mediaSession.playbackState = 'playing';
-                });
-                navigator.mediaSession.setActionHandler('pause', () => {
-                    audio.pause();
-                    navigator.mediaSession.playbackState = 'paused';
-                });
-                navigator.mediaSession.setActionHandler('stop', () => {
-                     audio.pause();
-                     navigator.mediaSession.playbackState = 'none';
-                });
+                }
+            } catch (err) {
+                console.warn("Background audio autoplay blocked:", err);
+                setIsBlocked(true);
+                onBlocked();
             }
         };
 
         if (state.user.backgroundKeepAlive) {
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-                    updateMediaSession();
-                }).catch(error => {
-                    const forcePlay = () => {
-                        audio.play().then(() => {
-                           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-                           updateMediaSession();
-                        });
-                        ['click', 'touchstart', 'keydown'].forEach(evt => 
-                            document.removeEventListener(evt, forcePlay)
-                        );
-                    };
-                    ['click', 'touchstart', 'keydown'].forEach(evt => 
-                        document.addEventListener(evt, forcePlay, { once: true })
-                    );
-                });
-            }
+            startPlayback();
         } else {
             audio.pause();
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'none';
+            }
         }
-        return () => { audio.pause(); }
-    }, [state.user.backgroundKeepAlive]);
-    return null;
-}
+        
+        return () => {
+            // Cleanup on unmount or toggle off
+            if (audio) audio.pause();
+        };
+    }, [state.user.backgroundKeepAlive, onBlocked]);
+
+    // Retry listener for blocked autoplay
+    useEffect(() => {
+        if (!isBlocked || !state.user.backgroundKeepAlive) return;
+
+        const handleInteraction = () => {
+            if (audioRef.current) {
+                audioRef.current.play()
+                    .then(() => {
+                        setIsBlocked(false);
+                        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+                    })
+                    .catch(e => console.error("Retry failed", e));
+            }
+        };
+
+        // Capture logic on next interaction
+        window.addEventListener('click', handleInteraction, { once: true });
+        window.addEventListener('touchstart', handleInteraction, { once: true });
+        window.addEventListener('keydown', handleInteraction, { once: true });
+        
+        return () => {
+            window.removeEventListener('click', handleInteraction);
+            window.removeEventListener('touchstart', handleInteraction);
+            window.removeEventListener('keydown', handleInteraction);
+        };
+    }, [isBlocked, state.user.backgroundKeepAlive]);
+
+    return (
+        <audio 
+            ref={audioRef} 
+            src={SILENT_AUDIO_URL} 
+            loop 
+            className="hidden" 
+            playsInline
+        />
+    );
+};
 
 const NotificationManager: React.FC<{ 
     onNotify: (title: string, msg: string) => void,
@@ -468,6 +502,15 @@ const AppContent: React.FC = () => {
   }, [state.user.theme]);
 
   const handleNotify = useCallback((title: string, msg: string) => setToast({ title, msg }), []);
+  
+  // Handler for when audio is blocked by browser policy
+  const handleAudioBlocked = useCallback(() => {
+      setToast({ 
+          title: "Background Mode Paused", 
+          msg: "Tap anywhere to activate background alarms." 
+      });
+  }, []);
+
   const handleAlarmStart = useCallback((title: string, msg: string, id?: number, type?: 'habit' | 'todo') => setActiveAlarm({ title, msg, id, type }), []);
   const handleDismissAlarm = useCallback(() => { setActiveAlarm(null); setDismissSignal(prev => prev + 1); }, []);
   const handleCompleteAlarm = useCallback(() => {
@@ -574,7 +617,7 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="mx-auto h-[100dvh] bg-[#F2F2F7] dark:bg-black overflow-hidden relative flex flex-col transition-colors duration-500">
-      <BackgroundAudioKeeper />
+      <BackgroundAudioKeeper onBlocked={handleAudioBlocked} />
       <NotificationManager 
         onNotify={handleNotify} onAlarmStart={handleAlarmStart} alarmDismissSignal={dismissSignal}
         onRemoteDismiss={handleDismissAlarm} onRemoteComplete={handleRemoteComplete}
