@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { TabHome } from './components/TabHome';
@@ -109,16 +108,16 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
 
         const startPlayback = async () => {
             try {
-                // Critical: Set volume > 0. On some Android versions, 0 volume = pause = suspend.
-                audio.volume = 0.05; 
+                // Critical: Set volume to 1.0. Silent file means no noise, but high volume indicates priority to OS.
+                audio.volume = 1.0; 
                 audio.loop = true;
                 
+                // Try to play immediately
                 await audio.play();
                 
                 setIsBlocked(false);
                 
                 if ('mediaSession' in navigator) {
-                    // Use locally generated image to avoid network fetch failures for the icon
                     const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
 
                     navigator.mediaSession.metadata = new MediaMetadata({
@@ -134,7 +133,7 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
                     const noop = () => {};
                     const actions = [
                         ['play', () => audio.play()],
-                        ['pause', () => audio.play()], // Force play on pause attempt
+                        ['pause', () => audio.play()], // Force play on pause attempt to prevent sleeping
                         ['stop', noop],
                         ['previoustrack', noop],
                         ['nexttrack', noop],
@@ -150,8 +149,11 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
                     navigator.mediaSession.playbackState = 'playing';
                 }
             } catch (err) {
+                // If autoplay is blocked, we set the blocked state to true.
+                // We do NOT call onBlocked() immediately if we can attach a listener to fix it silently.
                 console.warn("Background audio autoplay blocked:", err);
                 setIsBlocked(true);
+                // Call onBlocked to notify user if they are looking, but we will also auto-retry on interaction
                 onBlocked();
             }
         };
@@ -170,13 +172,15 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
         };
     }, [state.user.backgroundKeepAlive, onBlocked]);
 
-    // Retry listener for blocked autoplay
+    // Retry listener for blocked autoplay - Aggressive capture
     useEffect(() => {
         if (!isBlocked || !state.user.backgroundKeepAlive) return;
 
         const handleInteraction = () => {
             if (audioRef.current) {
-                audioRef.current.play()
+                const audio = audioRef.current;
+                audio.volume = 1.0;
+                audio.play()
                     .then(() => {
                         setIsBlocked(false);
                         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
@@ -185,16 +189,19 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
             }
         };
 
-        // Capture logic on ANY interaction
-        const events = ['click', 'touchstart', 'keydown', 'scroll'];
-        events.forEach(evt => window.addEventListener(evt, handleInteraction, { once: true, passive: true }));
+        // Capture logic on ANY interaction with the document
+        // We use capture: true to ensure we get the event before it's stopped by other handlers
+        const options = { once: true, capture: true };
+        const events = ['click', 'touchstart', 'touchend', 'keydown', 'scroll', 'visibilitychange'];
+        
+        events.forEach(evt => window.addEventListener(evt, handleInteraction, options));
         
         return () => {
-            events.forEach(evt => window.removeEventListener(evt, handleInteraction));
+            events.forEach(evt => window.removeEventListener(evt, handleInteraction, options));
         };
     }, [isBlocked, state.user.backgroundKeepAlive]);
 
-    // DOM Element: Using opacity 0 instead of hidden to prevent background throttling by OS
+    // DOM Element: Using 1px dimensions and 0.01 opacity (not 0) to avoid browser optimizations that cull invisible elements
     return (
         <audio 
             ref={audioRef} 
@@ -202,13 +209,13 @@ const BackgroundAudioKeeper: React.FC<{ onBlocked: () => void }> = ({ onBlocked 
             loop 
             playsInline
             style={{ 
-                opacity: 0, 
+                opacity: 0.01, 
                 position: 'fixed', 
                 bottom: 0, 
                 left: 0, 
                 pointerEvents: 'none',
-                height: 0,
-                width: 0,
+                height: '1px', 
+                width: '1px',
                 zIndex: -1 
             }}
         />
