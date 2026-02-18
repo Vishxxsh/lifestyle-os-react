@@ -134,6 +134,7 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void }> = ({ onTick }) => 
                         setupMediaSession();
                     }
                 } catch (e) {
+                    console.warn("Autoplay blocked, waiting for interaction");
                     // Fallback: Wait for next user interaction
                     const resume = () => {
                         audio.play().then(() => setupMediaSession()).catch(() => {});
@@ -158,6 +159,17 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void }> = ({ onTick }) => 
         };
         return () => { window.lifestyleAudio = undefined; };
     }, []);
+
+    // AUTO-START EFFECT: This was missing!
+    useEffect(() => {
+        if (state.user.backgroundKeepAlive) {
+            // Short delay to ensure DOM is ready
+            const t = setTimeout(() => {
+                window.lifestyleAudio?.enable();
+            }, 500);
+            return () => clearTimeout(t);
+        }
+    }, [state.user.backgroundKeepAlive]);
 
     const setupMediaSession = () => {
         if ('mediaSession' in navigator) {
@@ -201,9 +213,10 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void }> = ({ onTick }) => 
          // Trigger the Alarm Check Tick
          onTick();
 
-         // Loop manually if loop attribute fails
-         if (audioRef.current && audioRef.current.currentTime > 2) {
-             audioRef.current.currentTime = 0;
+         // Loop manually if loop attribute fails or audio is near end
+         // MP3 length is approx 0.1s, checking > 2s is wrong for this specific file.
+         // We just rely on 'loop' prop, but if it pauses, we restart.
+         if (audioRef.current && audioRef.current.paused && state.user.backgroundKeepAlive) {
              audioRef.current.play().catch(() => {});
          }
     };
