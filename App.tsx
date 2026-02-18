@@ -393,22 +393,30 @@ const NotificationManager: React.FC<{
         }
         
         osc.start(now);
-        osc.stop(now + duration);
+        osc.stop(now + duration + 0.5); // Allow slight tail
         activeOscillator.current = osc;
 
       } else {
-         // Notification Chime
+         // Notification Chime (Alerts)
+         // FIX: Loop for the duration!
          osc.type = 'sine';
-         osc.frequency.setValueAtTime(523.25, now); // C5
+         const spacing = 1.5; // Seconds between chimes
          
-         gain.gain.setValueAtTime(0, now);
-         gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
-         
-         osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.1); // Slide to C6
-         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-         
+         for(let i=0; i < duration; i += spacing) {
+             const start = now + i;
+             if (start + 0.5 > now + duration + 0.2) break; // Don't start if it will get cut off too abruptly
+
+             osc.frequency.setValueAtTime(523.25, start); // C5
+             
+             gain.gain.setValueAtTime(0, start);
+             gain.gain.linearRampToValueAtTime(0.2, start + 0.05);
+             
+             osc.frequency.exponentialRampToValueAtTime(1046.5, start + 0.1); // Slide to C6
+             gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+         }
+
          osc.start(now);
-         osc.stop(now + 0.5);
+         osc.stop(now + duration + 0.5); // Ensure it runs for the full duration
       }
     } catch (e) {
       console.error("Audio play failed", e);

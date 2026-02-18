@@ -221,7 +221,12 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void; isActive: boolean
   // FAB Binding - ONLY when active
   useEffect(() => {
     if (isActive) {
-        setFabOnClick(() => handleOpenHabitModal);
+        // Fix: Simply wrap the handler in a function, do NOT return a function from that wrapper 
+        // unless you are using the functional update form of useState, but here we are passing 
+        // to setFabOnClick which delegates to setFabAction.
+        // setFabAction(() => fn) -> state becomes fn.
+        // So fn must be () => handleOpenHabitModal().
+        setFabOnClick(() => handleOpenHabitModal());
     } else {
         setFabOnClick(null);
     }

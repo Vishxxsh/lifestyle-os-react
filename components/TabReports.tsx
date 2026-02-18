@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { getTodayStr, getScoreColor, formatDateDisplay, getThemeColors } from '../utils';
+import { getTodayStr, formatDateDisplay, getThemeColors, getScoreColor } from '../utils';
 import { ChevronLeft, ChevronRight, TrendingUp, BarChart3, Menu, Flame, Utensils, X, Check, Dumbbell, Calendar as CalendarIcon, Smile } from 'lucide-react';
 import { Meal, Workout } from '../types';
 import { Modal } from './Modal';
@@ -197,6 +196,29 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
         return map[color] || 'bg-blue-500';
     };
 
+    const getCalendarScoreClass = (score: number) => {
+        const c = theme.name; // e.g. 'blue', 'gray', 'slate', 'amber'
+        
+        // Use a strict map to ensure Tailwind picks up the classes during compilation
+        const colorMap: Record<string, Record<number, string>> = {
+           blue: { 600: 'bg-blue-600', 500: 'bg-blue-500', 400: 'bg-blue-400', 200: 'bg-blue-200', 100: 'bg-blue-100' },
+           violet: { 600: 'bg-violet-600', 500: 'bg-violet-500', 400: 'bg-violet-400', 200: 'bg-violet-200', 100: 'bg-violet-100' },
+           emerald: { 600: 'bg-emerald-600', 500: 'bg-emerald-500', 400: 'bg-emerald-400', 200: 'bg-emerald-200', 100: 'bg-emerald-100' },
+           red: { 600: 'bg-red-600', 500: 'bg-red-500', 400: 'bg-red-400', 200: 'bg-red-200', 100: 'bg-red-100' },
+           orange: { 600: 'bg-orange-600', 500: 'bg-orange-500', 400: 'bg-orange-400', 200: 'bg-orange-200', 100: 'bg-orange-100' },
+           pink: { 600: 'bg-pink-600', 500: 'bg-pink-500', 400: 'bg-pink-400', 200: 'bg-pink-200', 100: 'bg-pink-100' },
+           amber: { 600: 'bg-amber-600', 500: 'bg-amber-500', 400: 'bg-amber-400', 200: 'bg-amber-200', 100: 'bg-amber-100' },
+           gray: { 600: 'bg-gray-800', 500: 'bg-gray-600', 400: 'bg-gray-500', 200: 'bg-gray-300', 100: 'bg-gray-200' }, 
+           slate: { 600: 'bg-slate-600', 500: 'bg-slate-500', 400: 'bg-slate-400', 200: 'bg-slate-200', 100: 'bg-slate-100' },
+       };
+       
+       const intensity = score >= 9 ? 600 : score >= 7 ? 500 : score >= 5 ? 400 : score >= 3 ? 200 : 100;
+       const bgClass = colorMap[c]?.[intensity] || 'bg-gray-200';
+       const textClass = score >= 5 ? 'text-white' : 'text-gray-900';
+
+       return `${bgClass} ${textClass} ${score >= 9 ? 'shadow-md' : ''}`;
+    };
+
     // --- Day Details Helpers ---
     const getDayDetails = () => {
         if (!selectedDetailDate) return null;
@@ -267,7 +289,7 @@ export const TabReports: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSet
                                 onClick={() => setSelectedDetailDate(dateStr)}
                                 className={`aspect-square rounded-lg flex items-center justify-center text-xs font-bold transition-all active:scale-95 border border-transparent 
                                     ${score 
-                                        ? getScoreColor(score) 
+                                        ? getCalendarScoreClass(score)
                                         : hasData 
                                             ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white' 
                                             : 'bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-gray-100 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
