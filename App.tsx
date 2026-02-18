@@ -104,40 +104,19 @@ const generateNotificationImage = (text: string) => {
 };
 
 // --- Background Audio Keeper ---
-const BackgroundAudioKeeper: React.FC = () => {
+// This component plays silent audio to keep the app alive and triggers the "Tick" for alarms
+const BackgroundAudioKeeper: React.FC<{ onTick: () => void }> = ({ onTick }) => {
     const { state } = useApp();
     const audioRef = useRef<HTMLAudioElement>(null);
     const [audioSrc, setAudioSrc] = useState<string>("");
 
-    // Create a silent audio blob on mount. This is often more reliable than base64.
-    useEffect(() => {
-        // Simple silent wave file header
-        const buffer = new ArrayBuffer(44);
-        const view = new DataView(buffer);
-        // RIFF chunk descriptor
-        view.setUint32(0, 0x52494646, false); // "RIFF"
-        view.setUint32(4, 36, true);
-        view.setUint32(8, 0x57415645, false); // "WAVE"
-        // fmt sub-chunk
-        view.setUint32(12, 0x666d7420, false); // "fmt "
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true); // PCM
-        view.setUint16(22, 1, true); // Mono
-        view.setUint32(24, 44100, true); // Sample Rate
-        view.setUint32(28, 44100 * 2, true); // Byte Rate
-        view.setUint16(32, 2, true); // Block Align
-        view.setUint16(34, 16, true); // Bits per sample
-        // data sub-chunk
-        view.setUint32(36, 0x64617461, false); // "data"
-        view.setUint32(40, 0, true);
+    // Base64 Silent MP3 - Most reliable cross-platform format for this hack
+    const SILENT_MP3 = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTSVMAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAAAAMAADAP////////////8AAAAA//NIxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//NIxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
 
-        const blob = new Blob([view], { type: 'audio/wav' });
-        const url = URL.createObjectURL(blob);
-        setAudioSrc(url);
-        return () => URL.revokeObjectURL(url);
+    useEffect(() => {
+        setAudioSrc(SILENT_MP3);
     }, []);
     
-    // Expose control to window for synchronous triggering from SettingsModal
     useLayoutEffect(() => {
         window.lifestyleAudio = {
             enable: async () => {
@@ -145,7 +124,6 @@ const BackgroundAudioKeeper: React.FC = () => {
                 if (!audio) return;
                 
                 try {
-                    // Force a reset
                     audio.pause();
                     audio.currentTime = 0;
                     audio.volume = 1.0; 
@@ -156,7 +134,14 @@ const BackgroundAudioKeeper: React.FC = () => {
                         setupMediaSession();
                     }
                 } catch (e) {
-                    console.error("Audio enable failed", e);
+                    // Fallback: Wait for next user interaction
+                    const resume = () => {
+                        audio.play().then(() => setupMediaSession()).catch(() => {});
+                        document.removeEventListener('click', resume);
+                        document.removeEventListener('touchstart', resume);
+                    };
+                    document.addEventListener('click', resume);
+                    document.addEventListener('touchstart', resume);
                 }
             },
             disable: () => {
@@ -179,57 +164,49 @@ const BackgroundAudioKeeper: React.FC = () => {
             const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
 
             navigator.mediaSession.metadata = new MediaMetadata({
-                title: 'Background Active',
-                artist: 'LifestyleOS',
+                title: 'LifestyleOS Active',
+                artist: 'Background Service',
                 album: 'Keep-Alive',
                 artwork: [
                     { src: artworkImage, sizes: '512x512', type: 'image/png' }
                 ]
             });
 
-            // Handlers required for the notification to be "controllable" and thus visible
-            const playHandler = async () => { 
-                if(audioRef.current) {
-                    try { await audioRef.current.play(); } catch(e){}
-                }
+            const noop = () => {};
+            navigator.mediaSession.setActionHandler('play', () => { 
+                audioRef.current?.play(); 
                 navigator.mediaSession.playbackState = 'playing';
-            };
-            
-            navigator.mediaSession.setActionHandler('play', playHandler);
-            navigator.mediaSession.setActionHandler('pause', playHandler); // Trap pause
-            navigator.mediaSession.setActionHandler('stop', () => {}); 
-            navigator.mediaSession.setActionHandler('seekbackward', () => {}); 
-            navigator.mediaSession.setActionHandler('seekforward', () => {}); 
-            navigator.mediaSession.setActionHandler('previoustrack', () => {}); 
-            navigator.mediaSession.setActionHandler('nexttrack', () => {}); 
+            });
+            navigator.mediaSession.setActionHandler('pause', () => { 
+                audioRef.current?.play(); // Trap pause to keep playing
+                navigator.mediaSession.playbackState = 'playing';
+            });
+            navigator.mediaSession.setActionHandler('stop', noop); 
+            navigator.mediaSession.setActionHandler('seekbackward', noop); 
+            navigator.mediaSession.setActionHandler('seekforward', noop); 
+            navigator.mediaSession.setActionHandler('previoustrack', noop); 
+            navigator.mediaSession.setActionHandler('nexttrack', noop); 
 
             navigator.mediaSession.playbackState = 'playing';
         }
     };
 
-    // Keep alive loop
+    // This is the heartbeat of the app in background mode
     const handleTimeUpdate = () => {
+         // Re-assert playback state
          if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== 'playing') {
              navigator.mediaSession.playbackState = 'playing';
          }
-         // Loop manually if loop attribute fails (rare but happens)
-         if (audioRef.current && audioRef.current.currentTime > 28) {
+         
+         // Trigger the Alarm Check Tick
+         onTick();
+
+         // Loop manually if loop attribute fails
+         if (audioRef.current && audioRef.current.currentTime > 2) {
              audioRef.current.currentTime = 0;
              audioRef.current.play().catch(() => {});
          }
     };
-
-    // Auto-resume on interaction if enabled but stopped (e.g. system interruption)
-    useEffect(() => {
-        if (!state.user.backgroundKeepAlive) return;
-        const handleInteraction = () => {
-            if (audioRef.current && audioRef.current.paused) {
-                audioRef.current.play().then(() => setupMediaSession()).catch(() => {});
-            }
-        };
-        document.addEventListener('click', handleInteraction, { capture: true, passive: true });
-        return () => document.removeEventListener('click', handleInteraction);
-    }, [state.user.backgroundKeepAlive]);
 
     return (
         <audio 
@@ -247,23 +224,46 @@ const BackgroundAudioKeeper: React.FC = () => {
                 opacity: 0.001,
                 pointerEvents: 'none',
                 zIndex: 9999,
-                visibility: 'visible' // Ensure it's not "display: none"
+                visibility: 'visible'
             }}
         />
     );
 };
 
+// --- Notification & Sound Manager ---
 const NotificationManager: React.FC<{ 
+    tick: number, // Signal from audio loop
     onNotify: (title: string, msg: string) => void,
     onAlarmStart: (title: string, msg: string, id?: number, type?: 'habit' | 'todo') => void
     alarmDismissSignal: number 
     onRemoteDismiss: () => void;
     onRemoteComplete: (id: number, type: 'habit' | 'todo') => void;
-}> = ({ onNotify, onAlarmStart, alarmDismissSignal, onRemoteDismiss, onRemoteComplete }) => {
+}> = ({ tick, onNotify, onAlarmStart, alarmDismissSignal, onRemoteDismiss, onRemoteComplete }) => {
   const { state } = useApp();
   const lastCheckedTotalMinutes = useRef<number>(new Date().getHours() * 60 + new Date().getMinutes());
   const activeOscillator = useRef<OscillatorNode | null>(null);
-  const scheduledTriggers = useRef<Set<string>>(new Set());
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Initialize Audio Context on first interaction
+  useEffect(() => {
+      const initAudio = () => {
+          if (!audioContextRef.current) {
+              const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+              if (AudioContext) {
+                  audioContextRef.current = new AudioContext();
+              }
+          }
+          if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+              audioContextRef.current.resume();
+          }
+      };
+      document.addEventListener('click', initAudio, { once: true });
+      document.addEventListener('touchstart', initAudio, { once: true });
+      return () => {
+          document.removeEventListener('click', initAudio);
+          document.removeEventListener('touchstart', initAudio);
+      };
+  }, []);
 
   // Handle SW Messages
   useEffect(() => {
@@ -294,18 +294,23 @@ const NotificationManager: React.FC<{
     if (soundEnabled === false) return;
     if (isDNDActive()) return;
 
-    const duration = type === 'alarm' ? alarmDuration : chimeDuration;
-
     if (vibrationEnabled && navigator.vibrate) {
         if (type === 'alarm') navigator.vibrate([500, 200, 500, 200, 1000]); 
         else navigator.vibrate([100, 50, 100]);
     }
 
     try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioContext) return;
+      if (!audioContextRef.current) {
+          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContext) audioContextRef.current = new AudioContext();
+      }
       
-      const ctx = new AudioContext();
+      const ctx = audioContextRef.current;
+      if (!ctx) return;
+      
+      // Ensure context is running
+      if (ctx.state === 'suspended') ctx.resume();
+
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -313,75 +318,83 @@ const NotificationManager: React.FC<{
       osc.connect(gain);
       gain.connect(ctx.destination);
       
+      const duration = type === 'alarm' ? alarmDuration : chimeDuration;
+
       if (type === 'alarm') {
         if (soundType === 'classic') {
+             // Classic Digital Alarm Clock (Beep-Beep-Beep)
              osc.type = 'square';
-             osc.frequency.setValueAtTime(880, now);
-             for(let i=0; i < duration; i += 1) {
-                gain.gain.setValueAtTime(0.2, now + i);
-                gain.gain.setValueAtTime(0, now + i + 0.1);
+             osc.frequency.setValueAtTime(880, now); // A5
+             
+             // Pulse Volume
+             const beepLen = 0.15;
+             const pauseLen = 0.1;
+             
+             // Initial Gain
+             gain.gain.setValueAtTime(0, now);
+
+             for(let i=0; i < duration; i += 1) { // 1 second loop
+                // Beep 1
+                gain.gain.setValueAtTime(0.3, now + i);
+                gain.gain.setValueAtTime(0, now + i + beepLen);
+                // Beep 2
+                gain.gain.setValueAtTime(0.3, now + i + beepLen + pauseLen);
+                gain.gain.setValueAtTime(0, now + i + (beepLen*2) + pauseLen);
+                // Beep 3
+                gain.gain.setValueAtTime(0.3, now + i + (beepLen*2) + (pauseLen*2));
+                gain.gain.setValueAtTime(0, now + i + (beepLen*3) + (pauseLen*2));
              }
+
         } else if (soundType === 'retro') {
+             // 8-bit Arpeggio
              osc.type = 'sawtooth';
-             for(let i=0; i < duration; i+=0.5) {
-                 osc.frequency.setValueAtTime(440, now + i);
-                 osc.frequency.setValueAtTime(880, now + i + 0.1);
-                 gain.gain.setValueAtTime(0.15, now + i);
-                 gain.gain.linearRampToValueAtTime(0, now + i + 0.5);
+             for(let i=0; i < duration; i+=0.4) {
+                 osc.frequency.setValueAtTime(220, now + i);
+                 osc.frequency.setValueAtTime(440, now + i + 0.1);
+                 osc.frequency.setValueAtTime(880, now + i + 0.2);
+                 osc.frequency.setValueAtTime(1760, now + i + 0.3);
+                 
+                 gain.gain.setValueAtTime(0.1, now + i);
+                 gain.gain.linearRampToValueAtTime(0.05, now + i + 0.3);
+                 gain.gain.setValueAtTime(0, now + i + 0.4);
              }
         } else {
-             osc.type = 'triangle';
-             osc.frequency.setValueAtTime(880, now);
-             for(let i=0; i < duration; i+=1.5) {
+             // Modern: Smooth Sine Pulses
+             osc.type = 'sine';
+             for(let i=0; i < duration; i+=2) {
+                 // High-Low-High gentle sequence
+                 osc.frequency.setValueAtTime(880, now + i);
                  gain.gain.setValueAtTime(0, now + i);
-                 gain.gain.linearRampToValueAtTime(0.3, now + i + 0.1);
-                 gain.gain.linearRampToValueAtTime(0, now + i + 1.2);
+                 gain.gain.linearRampToValueAtTime(0.5, now + i + 0.1);
+                 gain.gain.linearRampToValueAtTime(0, now + i + 0.8);
+                 
+                 osc.frequency.setValueAtTime(1100, now + i + 0.9);
+                 gain.gain.linearRampToValueAtTime(0.5, now + i + 1.0);
+                 gain.gain.linearRampToValueAtTime(0, now + i + 1.8);
              }
         }
+        
         osc.start(now);
         osc.stop(now + duration);
         activeOscillator.current = osc;
 
       } else {
+         // Notification Chime
          osc.type = 'sine';
-         osc.frequency.setValueAtTime(523.25, now); 
-         if (duration <= 1) {
-             osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.1); 
-             gain.gain.setValueAtTime(0.1, now);
-             gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-             osc.stop(now + 0.5);
-         } else {
-             osc.frequency.setValueAtTime(880, now); // A5
-             const attack = 0.1;
-             const release = 0.5;
-             gain.gain.setValueAtTime(0, now);
-             gain.gain.linearRampToValueAtTime(0.1, now + attack);
-             gain.gain.setValueAtTime(0.1, now + duration - release);
-             gain.gain.linearRampToValueAtTime(0, now + duration);
-             osc.stop(now + duration);
-         }
+         osc.frequency.setValueAtTime(523.25, now); // C5
+         
+         gain.gain.setValueAtTime(0, now);
+         gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+         
+         osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.1); // Slide to C6
+         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+         
          osc.start(now);
+         osc.stop(now + 0.5);
       }
     } catch (e) {
       console.error("Audio play failed", e);
     }
-  };
-
-  const scheduleNotification = async (title: string, body: string, triggerTimestamp: number, tag: string) => {
-      if ('serviceWorker' in navigator && 'showTrigger' in Notification.prototype) {
-           const reg = await navigator.serviceWorker.ready;
-           if (scheduledTriggers.current.has(tag)) return;
-           try {
-               await reg.showNotification(title, {
-                   body, tag,
-                   icon: "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827",
-                   // @ts-ignore
-                   showTrigger: new TimestampTrigger(triggerTimestamp), 
-                   data: { url: window.location.href }
-               });
-               scheduledTriggers.current.add(tag);
-           } catch(e) { console.warn("TimestampTrigger failed", e); }
-      }
   };
 
   const sendNotification = async (title: string, body: string, isAlarm: boolean, id?: number, type?: 'habit' | 'todo') => {
@@ -389,6 +402,11 @@ const NotificationManager: React.FC<{
     if (Notification.permission === 'default') await Notification.requestPermission();
     if (Notification.permission !== "granted") return;
     if (isDNDActive()) return;
+
+    // Wake Lock Attempt (Experimental)
+    if ('wakeLock' in navigator && isAlarm) {
+        try { await (navigator as any).wakeLock.request('screen'); } catch(e){}
+    }
 
     const iconUrl = "https://api.iconify.design/lucide:layout-grid.svg?color=%23111827";
     const imageUrl = generateNotificationImage(title);
@@ -403,7 +421,9 @@ const NotificationManager: React.FC<{
         body, icon: iconUrl, badge: iconUrl, image: imageUrl,
         vibrate: [500, 250, 500, 250],
         tag: isAlarm ? 'alarm-' + Date.now() : 'notification-' + (id || 'general'),
-        renotify: true, requireInteraction: true, silent: false,
+        renotify: true, 
+        requireInteraction: true, // Key for waking/keeping screen on
+        silent: false,
         data: { url: window.location.href, habitId: type === 'habit' ? id : undefined, todoId: type === 'todo' ? id : undefined },
         actions: actions
     };
@@ -430,96 +450,97 @@ const NotificationManager: React.FC<{
      else return currentMinutes >= startTotal || currentMinutes < endTotal;
   };
 
+  // CHECK REMINDERS (Triggered by Audio Tick or Interval)
   useEffect(() => {
-    const checkReminders = () => {
-      if (isDNDActive()) return;
-      const now = new Date();
-      const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
-      const today = getTodayStr();
+      const check = () => {
+          if (isDNDActive()) return;
+          const now = new Date();
+          const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+          
+          // Avoid duplicate checks within the same minute
+          if (currentTotalMinutes === lastCheckedTotalMinutes.current) return;
+          
+          const today = getTodayStr();
+          let alarmTriggered = false;
+          let chimeTriggered = false;
+          let notificationTitle = "";
+          let notificationBody = "";
+          let alarmId: number | undefined;
+          let alarmType: 'habit' | 'todo' | undefined;
 
-      if (currentTotalMinutes === lastCheckedTotalMinutes.current) return;
+          // HABITS
+          state.habits.forEach(habit => {
+            let shouldNotify = false;
+            let isDailyAlarm = false;
 
-      let alarmTriggered = false;
-      let chimeTriggered = false;
-      let notificationTitle = "";
-      let notificationBody = "";
-      let alarmId: number | undefined;
-      let alarmType: 'habit' | 'todo' | undefined;
-
-      state.habits.forEach(habit => {
-        let shouldNotify = false;
-        let isDailyAlarm = false;
-
-        if (habit.reminderTime) {
-           const [remH, remM] = habit.reminderTime.split(':').map(Number);
-           const remTotal = remH * 60 + remM;
-           if (remTotal > lastCheckedTotalMinutes.current && remTotal <= currentTotalMinutes) {
-               shouldNotify = true; isDailyAlarm = true;
-               notificationTitle = `Time for ${habit.name}`; notificationBody = `It's ${habit.reminderTime}. Let's get it done.`;
-               alarmId = habit.id; alarmType = 'habit';
-           }
-        }
-        if (!shouldNotify && habit.reminderInterval && habit.reminderInterval > 0) {
-           const interval = habit.reminderInterval;
-           const lastStep = Math.floor(lastCheckedTotalMinutes.current / interval);
-           const currentStep = Math.floor(currentTotalMinutes / interval);
-           if (currentStep > lastStep) {
-             const val = state.logs[today]?.[habit.id];
-             const isDone = habit.type === 'checkbox' ? !!val : (val as number || 0) >= (habit.target || 1);
-             if (!isDone) {
-                shouldNotify = true; notificationTitle = `Reminder: ${habit.name}`; notificationBody = `Keep the streak alive!`;
-                alarmId = habit.id; alarmType = 'habit';
-                const nextIntervalMinutes = (currentStep + 1) * interval;
-                const nextDate = new Date();
-                nextDate.setHours(Math.floor(nextIntervalMinutes / 60)); nextDate.setMinutes(nextIntervalMinutes % 60); nextDate.setSeconds(0);
-                if (nextDate.getTime() > Date.now()) scheduleNotification(notificationTitle, notificationBody, nextDate.getTime(), `interval-${habit.id}-${currentStep+1}`);
-             }
-           }
-        }
-        if (shouldNotify) {
-            if (isDailyAlarm) { alarmTriggered = true; onAlarmStart(notificationTitle, notificationBody, alarmId, alarmType); }
-            else { chimeTriggered = true; onNotify(notificationTitle, notificationBody); }
-            sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmId, alarmType);
-        }
-      });
-
-      state.todos.forEach(todo => {
-          if (todo.done) return;
-          let shouldNotify = false; let isDailyAlarm = false;
-          if (todo.reminderTime) {
-              const [tH, tM] = todo.reminderTime.split(':').map(Number);
-              const tTotal = tH * 60 + tM;
-              if (tTotal > lastCheckedTotalMinutes.current && tTotal <= currentTotalMinutes) {
-                  shouldNotify = true; isDailyAlarm = true;
-                  notificationTitle = "Mission Alert"; notificationBody = todo.text;
-                  alarmId = todo.id; alarmType = 'todo';
-              }
-          }
-          if (!shouldNotify && todo.reminderInterval && todo.reminderInterval > 0) {
-               const interval = todo.reminderInterval;
+            if (habit.reminderTime) {
+               const [remH, remM] = habit.reminderTime.split(':').map(Number);
+               const remTotal = remH * 60 + remM;
+               // Robust window check: Did we cross the time boundary since last check?
+               if (remTotal > lastCheckedTotalMinutes.current && remTotal <= currentTotalMinutes) {
+                   shouldNotify = true; isDailyAlarm = true;
+                   notificationTitle = `Time for ${habit.name}`; notificationBody = `It's ${habit.reminderTime}. Let's get it done.`;
+                   alarmId = habit.id; alarmType = 'habit';
+               }
+            }
+            if (!shouldNotify && habit.reminderInterval && habit.reminderInterval > 0) {
+               const interval = habit.reminderInterval;
                const lastStep = Math.floor(lastCheckedTotalMinutes.current / interval);
                const currentStep = Math.floor(currentTotalMinutes / interval);
                if (currentStep > lastStep) {
-                   shouldNotify = true; notificationTitle = "Mission Reminder"; notificationBody = `Still pending: ${todo.text}`;
-                   alarmId = todo.id; alarmType = 'todo';
+                 const val = state.logs[today]?.[habit.id];
+                 const isDone = habit.type === 'checkbox' ? !!val : (val as number || 0) >= (habit.target || 1);
+                 if (!isDone) {
+                    shouldNotify = true; notificationTitle = `Reminder: ${habit.name}`; notificationBody = `Keep the streak alive!`;
+                    alarmId = habit.id; alarmType = 'habit';
+                 }
                }
-          }
-          if (shouldNotify) {
-              if (isDailyAlarm) { alarmTriggered = true; onAlarmStart(notificationTitle, notificationBody, alarmId, alarmType); }
-              else { chimeTriggered = true; onNotify(notificationTitle, notificationBody); }
-              sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmId, alarmType);
-          }
-      });
+            }
+            if (shouldNotify) {
+                if (isDailyAlarm) { alarmTriggered = true; onAlarmStart(notificationTitle, notificationBody, alarmId, alarmType); }
+                else { chimeTriggered = true; onNotify(notificationTitle, notificationBody); }
+                sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmId, alarmType);
+            }
+          });
 
-      if (alarmTriggered) playSound('alarm');
-      else if (chimeTriggered) playSound('chime');
-      lastCheckedTotalMinutes.current = currentTotalMinutes;
-    };
-    const interval = setInterval(checkReminders, 5000); 
-    const handleVisibilityChange = () => { if (document.visibilityState === 'visible') checkReminders(); };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", handleVisibilityChange); };
-  }, [state.habits, state.todos, state.logs, onNotify, onAlarmStart, state.user]);
+          // TODOS
+          state.todos.forEach(todo => {
+              if (todo.done) return;
+              let shouldNotify = false; let isDailyAlarm = false;
+              if (todo.reminderTime) {
+                  const [tH, tM] = todo.reminderTime.split(':').map(Number);
+                  const tTotal = tH * 60 + tM;
+                  if (tTotal > lastCheckedTotalMinutes.current && tTotal <= currentTotalMinutes) {
+                      shouldNotify = true; isDailyAlarm = true;
+                      notificationTitle = "Mission Alert"; notificationBody = todo.text;
+                      alarmId = todo.id; alarmType = 'todo';
+                  }
+              }
+              if (!shouldNotify && todo.reminderInterval && todo.reminderInterval > 0) {
+                   const interval = todo.reminderInterval;
+                   const lastStep = Math.floor(lastCheckedTotalMinutes.current / interval);
+                   const currentStep = Math.floor(currentTotalMinutes / interval);
+                   if (currentStep > lastStep) {
+                       shouldNotify = true; notificationTitle = "Mission Reminder"; notificationBody = `Still pending: ${todo.text}`;
+                       alarmId = todo.id; alarmType = 'todo';
+                   }
+              }
+              if (shouldNotify) {
+                  if (isDailyAlarm) { alarmTriggered = true; onAlarmStart(notificationTitle, notificationBody, alarmId, alarmType); }
+                  else { chimeTriggered = true; onNotify(notificationTitle, notificationBody); }
+                  sendNotification(notificationTitle, notificationBody, isDailyAlarm, alarmId, alarmType);
+              }
+          });
+
+          if (alarmTriggered) playSound('alarm');
+          else if (chimeTriggered) playSound('chime');
+          
+          lastCheckedTotalMinutes.current = currentTotalMinutes;
+      };
+
+      check();
+  }, [tick, state.habits, state.todos, state.logs, state.user]); // Dependencies include 'tick'
+
   return null;
 };
 
@@ -534,6 +555,9 @@ const AppContent: React.FC = () => {
   const [activeAlarm, setActiveAlarm] = useState<{title: string, msg: string, id?: number, type?: 'habit' | 'todo'} | null>(null);
   const [dismissSignal, setDismissSignal] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // Audio Tick State
+  const [audioTick, setAudioTick] = useState(0);
 
   // --- NEW SWIPE LOGIC ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -554,8 +578,10 @@ const AppContent: React.FC = () => {
 
   const handleNotify = useCallback((title: string, msg: string) => setToast({ title, msg }), []);
   
-  // No-op for blocked audio to prevent popup spam, logic handled in BackgroundAudioKeeper
-  const handleAudioBlocked = useCallback(() => {}, []);
+  // Callback passed to BackgroundAudioKeeper to signal a tick
+  const handleAudioTick = useCallback(() => {
+      setAudioTick(t => t + 1);
+  }, []);
 
   const handleAlarmStart = useCallback((title: string, msg: string, id?: number, type?: 'habit' | 'todo') => setActiveAlarm({ title, msg, id, type }), []);
   const handleDismissAlarm = useCallback(() => { setActiveAlarm(null); setDismissSignal(prev => prev + 1); }, []);
@@ -582,7 +608,6 @@ const AppContent: React.FC = () => {
   const switchTab = (tab: typeof activeTab) => {
       setActiveTab(tab);
       triggerHaptic();
-      // Reset drag just in case
       setDragOffset(0);
   };
 
@@ -604,25 +629,19 @@ const AppContent: React.FC = () => {
     const deltaX = currentX - touchStart.x;
     const deltaY = currentY - touchStart.y;
 
-    // Determine intent on first significant move
     if (!isScrollLocked.current && !isSwiping) {
         if (Math.abs(deltaY) > Math.abs(deltaX)) {
-            // Vertical scroll dominant - Lock swipe
             isScrollLocked.current = true;
             return;
         } else if (Math.abs(deltaX) > 10) {
-            // Horizontal swipe dominant
             setIsSwiping(true);
         }
     }
 
     if (isSwiping) {
-        // Prevent browser back/forward gestures if handled
         if (e.cancelable) e.preventDefault(); 
-        
-        // Add resistance at edges
         if ((activeIndex === 0 && deltaX > 0) || (activeIndex === TAB_ORDER.length - 1 && deltaX < 0)) {
-            setDragOffset(deltaX * 0.3); // High resistance
+            setDragOffset(deltaX * 0.3);
         } else {
             setDragOffset(deltaX);
         }
@@ -633,16 +652,13 @@ const AppContent: React.FC = () => {
     if (!touchStart) return;
 
     if (isSwiping) {
-        const threshold = window.innerWidth * 0.25; // Swipe 25% of screen to trigger
+        const threshold = window.innerWidth * 0.25; 
         
         if (dragOffset > threshold && activeIndex > 0) {
-            // Swipe Right -> Prev Tab
             switchTab(TAB_ORDER[activeIndex - 1]);
         } else if (dragOffset < -threshold && activeIndex < TAB_ORDER.length - 1) {
-            // Swipe Left -> Next Tab
             switchTab(TAB_ORDER[activeIndex + 1]);
         }
-        // If not threshold met, or edge case, it snaps back because dragOffset resets to 0
     }
     
     setDragOffset(0);
@@ -663,8 +679,10 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="mx-auto h-[100dvh] bg-[#F2F2F7] dark:bg-black overflow-hidden relative flex flex-col transition-colors duration-500">
-      <BackgroundAudioKeeper />
+      {/* Background Audio tick passed to Notification Manager */}
+      <BackgroundAudioKeeper onTick={handleAudioTick} />
       <NotificationManager 
+        tick={audioTick}
         onNotify={handleNotify} onAlarmStart={handleAlarmStart} alarmDismissSignal={dismissSignal}
         onRemoteDismiss={handleDismissAlarm} onRemoteComplete={handleRemoteComplete}
       />
@@ -676,11 +694,6 @@ const AppContent: React.FC = () => {
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       {toast && <Toast title={toast.title} message={toast.msg} onClose={() => setToast(null)} />}
       
-      {/* 
-        CAROUSEL CONTAINER 
-        We use CSS Transform to slide the entire track.
-        Touch listeners are on this main container.
-      */}
       <main 
         className="flex-1 w-full h-full relative overflow-hidden"
         onTouchStart={onTouchStart}
@@ -694,15 +707,12 @@ const AppContent: React.FC = () => {
                 transition: isSwiping ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
             }}
         >
-             {/* 
-                Each tab is 20% of the 500% container (which is 100vw). 
-                Each tab handles its own vertical scrolling.
-             */}
             <div className="w-[20%] h-full overflow-y-auto no-scrollbar p-4 sm:p-6 pb-28">
                 <TabHome onOpenSettings={openSettings} />
             </div>
             <div className="w-[20%] h-full overflow-y-auto no-scrollbar p-4 sm:p-6 pb-28">
-                <TabHabits onOpenSettings={openSettings} />
+                {/* Passed isActive prop so FAB only shows here */}
+                <TabHabits onOpenSettings={openSettings} isActive={activeTab === 'habits'} />
             </div>
             <div className="w-[20%] h-full overflow-y-auto no-scrollbar p-4 sm:p-6 pb-28">
                 <TabMeals onOpenSettings={openSettings} />
@@ -716,6 +726,7 @@ const AppContent: React.FC = () => {
         </div>
       </main>
 
+      {/* Renders FAB only if active tab (Habits) requests it */}
       {fabOnClick && (
         <div className="fixed bottom-28 right-6 max-w-md mx-auto w-full pointer-events-none flex justify-end z-40">
             <button 
@@ -728,7 +739,6 @@ const AppContent: React.FC = () => {
         </div>
       )}
 
-      {/* Floating Glass Navigation */}
       <div className="fixed bottom-8 left-4 right-4 z-50 flex justify-center pointer-events-none">
           <nav className="pointer-events-auto w-full max-w-[22rem] h-[72px] glass border border-white/40 dark:border-white/10 rounded-[2.5rem] shadow-ios-lg flex items-center justify-between px-6">
             <NavItem id="home" icon={Home} label="Home" />

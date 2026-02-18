@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateStreak, getTodayStr, getYesterdayStr, getThemeColors } from '../utils';
@@ -8,7 +7,8 @@ import { HabitType, Habit, CategoryDef, FrequencyType } from '../types';
 
 const AVAILABLE_COLORS = ['blue', 'red', 'emerald', 'purple', 'orange', 'slate'];
 
-export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSettings }) => {
+// Added isActive prop
+export const TabHabits: React.FC<{ onOpenSettings: () => void; isActive: boolean }> = ({ onOpenSettings, isActive }) => {
   const { state, addHabit, updateHabit, deleteHabit, moveHabit, toggleHabit, setHabitValue, setFabOnClick, addCategory, updateCategory, deleteCategory } = useApp();
   
   // --- STATE ---
@@ -218,11 +218,15 @@ export const TabHabits: React.FC<{ onOpenSettings: () => void }> = ({ onOpenSett
       }
   };
 
-  // FAB Binding
+  // FAB Binding - ONLY when active
   useEffect(() => {
-    setFabOnClick(() => handleOpenHabitModal());
+    if (isActive) {
+        setFabOnClick(() => handleOpenHabitModal);
+    } else {
+        setFabOnClick(null);
+    }
     return () => setFabOnClick(null);
-  }, [setFabOnClick, handleOpenHabitModal]);
+  }, [isActive, setFabOnClick, handleOpenHabitModal]);
 
   // Drag and Drop
   const handleDragStart = (e: React.DragEvent, id: number) => {
