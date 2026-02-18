@@ -108,15 +108,10 @@ const generateNotificationImage = (text: string) => {
 const BackgroundAudioKeeper: React.FC<{ onTick: () => void; onError: (msg: string) => void }> = ({ onTick, onError }) => {
     const { state } = useApp();
     const audioRef = useRef<HTMLAudioElement>(null);
-    const [audioSrc, setAudioSrc] = useState<string>("");
 
-    // Base64 Silent MP3 - Most reliable cross-platform format for this hack
-    const SILENT_MP3 = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTSVMAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAAAAMAADAP////////////8AAAAA//NIxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//NIxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
+    // Universal Silent WAV (more reliable than MP3 base64 across browsers)
+    const SILENT_WAV = "data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==";
 
-    useEffect(() => {
-        setAudioSrc(SILENT_MP3);
-    }, []);
-    
     useLayoutEffect(() => {
         const setupMediaSession = () => {
             if ('mediaSession' in navigator) {
@@ -155,6 +150,11 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void; onError: (msg: strin
                 const audio = audioRef.current;
                 if (!audio) return;
                 
+                // Force reload if needed to ensure src is picked up
+                if (!audio.currentSrc) {
+                    audio.load();
+                }
+
                 try {
                     audio.currentTime = 0;
                     audio.volume = 1.0; 
@@ -183,7 +183,6 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void; onError: (msg: strin
     }, [onError]);
 
     // AUTO-START ON INTERACTION
-    // Browsers block autoplay. We must wait for the first user interaction.
     useEffect(() => {
         if (!state.user.backgroundKeepAlive) return;
 
@@ -213,17 +212,14 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void; onError: (msg: strin
         };
     }, [state.user.backgroundKeepAlive]);
 
-    // This is the heartbeat of the app in background mode
     const handleTimeUpdate = () => {
          // Re-assert playback state
          if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== 'playing') {
              navigator.mediaSession.playbackState = 'playing';
          }
          
-         // Trigger the Alarm Check Tick
          onTick();
 
-         // Loop manually if loop attribute fails
          if (audioRef.current && audioRef.current.paused && state.user.backgroundKeepAlive) {
              audioRef.current.play().catch(() => {});
          }
@@ -232,8 +228,9 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void; onError: (msg: strin
     return (
         <audio 
             ref={audioRef} 
-            src={audioSrc} 
+            src={SILENT_WAV} 
             loop 
+            preload="auto"
             playsInline
             onTimeUpdate={handleTimeUpdate}
             style={{ 
