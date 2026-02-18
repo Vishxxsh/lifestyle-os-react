@@ -6,7 +6,7 @@ import { TabMeals } from './components/TabMeals';
 import { TabGoals } from './components/TabGoals';
 import { TabReports } from './components/TabReports';
 import { SettingsModal } from './components/SettingsModal';
-import { Home, CheckSquare, Utensils, Target, BarChart3, Plus, X, Bell, AlarmClock } from 'lucide-react';
+import { Home, CheckSquare, Utensils, Target, BarChart3, Plus, X, Bell, AlarmClock, AlertTriangle } from 'lucide-react';
 import { getTodayStr, getThemeColors } from './utils';
 
 // Add type definition for global window object
@@ -21,20 +21,20 @@ declare global {
 }
 
 // Toast Component
-const Toast: React.FC<{ title: string; message: string; onClose: () => void }> = ({ title, message, onClose }) => {
+const Toast: React.FC<{ title: string; message: string; type?: 'info' | 'error'; onClose: () => void }> = ({ title, message, type = 'info', onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 5000);
     return () => clearTimeout(timer);
   }, [onClose]);
 
   return (
-    <div className="fixed top-6 left-4 right-4 z-[100] glass border border-white/20 dark:border-white/10 text-gray-900 dark:text-white p-4 rounded-3xl shadow-ios-lg flex items-start gap-3 transform transition-all animate-[slideIn_0.4s_cubic-bezier(0.175,0.885,0.32,1.275)]">
-      <div className="p-2.5 bg-blue-500/10 text-blue-500 rounded-full shrink-0">
-        <Bell size={20} />
+    <div className={`fixed top-6 left-4 right-4 z-[250] glass border ${type === 'error' ? 'border-red-500/50 bg-red-500/10' : 'border-white/20 dark:border-white/10'} text-gray-900 dark:text-white p-4 rounded-3xl shadow-ios-lg flex items-start gap-3 transform transition-all animate-[slideIn_0.4s_cubic-bezier(0.175,0.885,0.32,1.275)]`}>
+      <div className={`p-2.5 rounded-full shrink-0 ${type === 'error' ? 'bg-red-500/20 text-red-500' : 'bg-blue-500/10 text-blue-500'}`}>
+        {type === 'error' ? <AlertTriangle size={20} /> : <Bell size={20} />}
       </div>
       <div className="flex-1 min-w-0 pt-1">
         <h4 className="font-bold text-sm tracking-tight">{title}</h4>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{message}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed break-words">{message}</p>
       </div>
       <button onClick={onClose} className="text-gray-400 hover:text-gray-900 dark:hover:text-white p-1">
         <X size={18} />
@@ -105,7 +105,7 @@ const generateNotificationImage = (text: string) => {
 
 // --- Background Audio Keeper ---
 // This component plays silent audio to keep the app alive and triggers the "Tick" for alarms
-const BackgroundAudioKeeper: React.FC<{ onTick: () => void }> = ({ onTick }) => {
+const BackgroundAudioKeeper: React.FC<{ onTick: () => void; onError: (msg: string) => void }> = ({ onTick, onError }) => {
     const { state } = useApp();
     const audioRef = useRef<HTMLAudioElement>(null);
     const [audioSrc, setAudioSrc] = useState<string>("");
@@ -118,31 +118,53 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void }> = ({ onTick }) => 
     }, []);
     
     useLayoutEffect(() => {
+        const setupMediaSession = () => {
+            if ('mediaSession' in navigator) {
+                const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
+
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: 'LifestyleOS Active',
+                    artist: 'Background Service',
+                    album: 'Keep-Alive',
+                    artwork: [
+                        { src: artworkImage, sizes: '512x512', type: 'image/png' }
+                    ]
+                });
+
+                const noop = () => {};
+                navigator.mediaSession.setActionHandler('play', () => { 
+                    audioRef.current?.play(); 
+                    navigator.mediaSession.playbackState = 'playing';
+                });
+                navigator.mediaSession.setActionHandler('pause', () => { 
+                    audioRef.current?.play(); // Trap pause to keep playing
+                    navigator.mediaSession.playbackState = 'playing';
+                });
+                navigator.mediaSession.setActionHandler('stop', noop); 
+                navigator.mediaSession.setActionHandler('seekbackward', noop); 
+                navigator.mediaSession.setActionHandler('seekforward', noop); 
+                navigator.mediaSession.setActionHandler('previoustrack', noop); 
+                navigator.mediaSession.setActionHandler('nexttrack', noop); 
+
+                navigator.mediaSession.playbackState = 'playing';
+            }
+        };
+
         window.lifestyleAudio = {
             enable: async () => {
                 const audio = audioRef.current;
                 if (!audio) return;
                 
                 try {
-                    audio.pause();
                     audio.currentTime = 0;
                     audio.volume = 1.0; 
-                    
-                    const playPromise = audio.play();
-                    if (playPromise !== undefined) {
-                        await playPromise;
-                        setupMediaSession();
-                    }
-                } catch (e) {
-                    console.warn("Autoplay blocked, waiting for interaction");
-                    // Fallback: Wait for next user interaction
-                    const resume = () => {
-                        audio.play().then(() => setupMediaSession()).catch(() => {});
-                        document.removeEventListener('click', resume);
-                        document.removeEventListener('touchstart', resume);
-                    };
-                    document.addEventListener('click', resume);
-                    document.addEventListener('touchstart', resume);
+                    await audio.play();
+                    setupMediaSession();
+                } catch (e: any) {
+                    console.error("Audio Enable Error:", e);
+                    // Pass specific error up to UI
+                    onError(`Audio Start Failed: ${e.message || e.toString()}`);
+                    throw e; // Re-throw for caller
                 }
             },
             disable: () => {
@@ -158,50 +180,38 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void }> = ({ onTick }) => 
             }
         };
         return () => { window.lifestyleAudio = undefined; };
-    }, []);
+    }, [onError]);
 
-    // AUTO-START EFFECT: This was missing!
+    // AUTO-START ON INTERACTION
+    // Browsers block autoplay. We must wait for the first user interaction.
     useEffect(() => {
-        if (state.user.backgroundKeepAlive) {
-            // Short delay to ensure DOM is ready
-            const t = setTimeout(() => {
-                window.lifestyleAudio?.enable();
-            }, 500);
-            return () => clearTimeout(t);
-        }
+        if (!state.user.backgroundKeepAlive) return;
+
+        const attemptPlay = async () => {
+             if (audioRef.current && audioRef.current.paused) {
+                 try {
+                     await window.lifestyleAudio?.enable();
+                     // If success, remove listeners
+                     document.removeEventListener('click', attemptPlay);
+                     document.removeEventListener('touchstart', attemptPlay);
+                 } catch (e) {
+                     // If it fails (still blocked?), keep listener attached
+                 }
+             }
+        };
+
+        // Try immediately (might work if we are in a click chain)
+        attemptPlay();
+
+        // Attach listeners to "catch" the next interaction
+        document.addEventListener('click', attemptPlay);
+        document.addEventListener('touchstart', attemptPlay);
+
+        return () => {
+            document.removeEventListener('click', attemptPlay);
+            document.removeEventListener('touchstart', attemptPlay);
+        };
     }, [state.user.backgroundKeepAlive]);
-
-    const setupMediaSession = () => {
-        if ('mediaSession' in navigator) {
-            const artworkImage = generateNotificationImage("Active") || 'https://api.iconify.design/lucide:zap.svg?color=%23ffffff';
-
-            navigator.mediaSession.metadata = new MediaMetadata({
-                title: 'LifestyleOS Active',
-                artist: 'Background Service',
-                album: 'Keep-Alive',
-                artwork: [
-                    { src: artworkImage, sizes: '512x512', type: 'image/png' }
-                ]
-            });
-
-            const noop = () => {};
-            navigator.mediaSession.setActionHandler('play', () => { 
-                audioRef.current?.play(); 
-                navigator.mediaSession.playbackState = 'playing';
-            });
-            navigator.mediaSession.setActionHandler('pause', () => { 
-                audioRef.current?.play(); // Trap pause to keep playing
-                navigator.mediaSession.playbackState = 'playing';
-            });
-            navigator.mediaSession.setActionHandler('stop', noop); 
-            navigator.mediaSession.setActionHandler('seekbackward', noop); 
-            navigator.mediaSession.setActionHandler('seekforward', noop); 
-            navigator.mediaSession.setActionHandler('previoustrack', noop); 
-            navigator.mediaSession.setActionHandler('nexttrack', noop); 
-
-            navigator.mediaSession.playbackState = 'playing';
-        }
-    };
 
     // This is the heartbeat of the app in background mode
     const handleTimeUpdate = () => {
@@ -213,9 +223,7 @@ const BackgroundAudioKeeper: React.FC<{ onTick: () => void }> = ({ onTick }) => 
          // Trigger the Alarm Check Tick
          onTick();
 
-         // Loop manually if loop attribute fails or audio is near end
-         // MP3 length is approx 0.1s, checking > 2s is wrong for this specific file.
-         // We just rely on 'loop' prop, but if it pauses, we restart.
+         // Loop manually if loop attribute fails
          if (audioRef.current && audioRef.current.paused && state.user.backgroundKeepAlive) {
              audioRef.current.play().catch(() => {});
          }
@@ -564,7 +572,7 @@ const AppContent: React.FC = () => {
   const activeIndex = TAB_ORDER.indexOf(activeTab);
 
   const { state, fabOnClick, toggleHabit, toggleTodo } = useApp();
-  const [toast, setToast] = useState<{title: string, msg: string} | null>(null);
+  const [toast, setToast] = useState<{title: string, msg: string, type: 'info' | 'error'} | null>(null);
   const [activeAlarm, setActiveAlarm] = useState<{title: string, msg: string, id?: number, type?: 'habit' | 'todo'} | null>(null);
   const [dismissSignal, setDismissSignal] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -589,8 +597,9 @@ const AppContent: React.FC = () => {
     else document.documentElement.classList.remove('dark');
   }, [state.user.theme]);
 
-  const handleNotify = useCallback((title: string, msg: string) => setToast({ title, msg }), []);
-  
+  const handleNotify = useCallback((title: string, msg: string) => setToast({ title, msg, type: 'info' }), []);
+  const handleAudioError = useCallback((msg: string) => setToast({ title: "Background Audio Error", msg, type: 'error' }), []);
+
   // Callback passed to BackgroundAudioKeeper to signal a tick
   const handleAudioTick = useCallback(() => {
       setAudioTick(t => t + 1);
@@ -602,7 +611,7 @@ const AppContent: React.FC = () => {
       if (activeAlarm?.id) {
           if (activeAlarm.type === 'habit') toggleHabit(activeAlarm.id, getTodayStr());
           else if (activeAlarm.type === 'todo') toggleTodo(activeAlarm.id);
-          setToast({ title: "Awesome!", msg: "Completed. Keep it up!" });
+          setToast({ title: "Awesome!", msg: "Completed. Keep it up!", type: 'info' });
       }
       handleDismissAlarm();
   }, [activeAlarm, toggleHabit, toggleTodo, handleDismissAlarm]);
@@ -610,7 +619,7 @@ const AppContent: React.FC = () => {
   const handleRemoteComplete = useCallback((id: number, type: 'habit' | 'todo') => {
       if (type === 'habit') toggleHabit(id, getTodayStr());
       else if (type === 'todo') toggleTodo(id);
-      setToast({ title: "Awesome!", msg: "Marked done via notification." });
+      setToast({ title: "Awesome!", msg: "Marked done via notification.", type: 'info' });
       handleDismissAlarm();
   }, [toggleHabit, toggleTodo, handleDismissAlarm]);
 
@@ -693,7 +702,7 @@ const AppContent: React.FC = () => {
   return (
     <div className="mx-auto h-[100dvh] bg-[#F2F2F7] dark:bg-black overflow-hidden relative flex flex-col transition-colors duration-500">
       {/* Background Audio tick passed to Notification Manager */}
-      <BackgroundAudioKeeper onTick={handleAudioTick} />
+      <BackgroundAudioKeeper onTick={handleAudioTick} onError={handleAudioError} />
       <NotificationManager 
         tick={audioTick}
         onNotify={handleNotify} onAlarmStart={handleAlarmStart} alarmDismissSignal={dismissSignal}
@@ -705,7 +714,7 @@ const AppContent: React.FC = () => {
       )}
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-      {toast && <Toast title={toast.title} message={toast.msg} onClose={() => setToast(null)} />}
+      {toast && <Toast title={toast.title} message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       
       <main 
         className="flex-1 w-full h-full relative overflow-hidden"

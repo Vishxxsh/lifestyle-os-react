@@ -5,7 +5,7 @@ import {
     Moon, Sun, Volume2, VolumeX, Bell, Download, Upload, AlertTriangle, 
     Smartphone, SmartphoneNfc, Music, Clock, MoonStar, CheckCircle2, 
     AlertCircle, RefreshCw, ChevronRight, ChevronLeft, User, Database, 
-    Palette, ArrowLeft, Battery, BatteryCharging
+    Palette, ArrowLeft, Battery, BatteryCharging, CloudDownload
 } from 'lucide-react';
 import { SoundType } from '../types';
 import { getThemeColors } from '../utils';
@@ -124,6 +124,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         downloadAnchorNode.remove();
     };
 
+    const handleUpdateApp = async () => {
+        if (!confirm("This will force the app to reload and fetch the latest version. Continue?")) return;
+
+        try {
+            // Unregister all Service Workers
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    await registration.unregister();
+                }
+            }
+            
+            // Clear Cache Storage (The core issue with stale updates)
+            if ('caches' in window) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map(key => caches.delete(key)));
+            }
+
+            alert("Update complete. The app will now reload.");
+            window.location.reload();
+        } catch (e) {
+            console.error("Update failed", e);
+            alert("Could not automatically update. Please refresh the page manually.");
+        }
+    };
+
+    const handleBackgroundToggle = async () => {
+        const newState = !state.user.backgroundKeepAlive;
+        updateUserConfig({ backgroundKeepAlive: newState });
+        
+        if (newState) {
+            try {
+                if(window.lifestyleAudio?.enable) {
+                    await window.lifestyleAudio.enable();
+                }
+            } catch (e: any) {
+                alert(`Cannot start background audio:\n${e.message}\n\nPlease interact with the page or check browser autoplay settings.`);
+                // Revert toggle if failed (optional, but good UX)
+                updateUserConfig({ backgroundKeepAlive: false });
+            }
+        } else {
+            window.lifestyleAudio?.disable();
+        }
+    };
+
     const soundTypes: {value: SoundType, label: string}[] = [
         { value: 'modern', label: 'Modern' },
         { value: 'classic', label: 'Classic' },
@@ -191,6 +236,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-700">
                 <MenuRow icon={Volume2} label="Sound & Vibration" value={state.user.soundEnabled ? 'On' : 'Off'} onClick={() => setCurrentView('sounds')} />
                 <MenuRow icon={Bell} label="Notifications" onClick={() => setCurrentView('notifications')} />
+                <MenuRow icon={RefreshCw} label="Check for Update" onClick={handleUpdateApp} />
             </div>
 
             <SectionHeader title="Storage" />
@@ -307,16 +353,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     </div>
                 </button>
                  <button 
-                    onClick={() => {
-                        const newState = !state.user.backgroundKeepAlive;
-                        updateUserConfig({ backgroundKeepAlive: newState });
-                        // CRITICAL: Trigger play immediately on User Click to satisfy browser autoplay policy
-                        if (newState) {
-                            window.lifestyleAudio?.enable();
-                        } else {
-                            window.lifestyleAudio?.disable();
-                        }
-                    }}
+                    onClick={handleBackgroundToggle}
                     className="w-full flex items-center justify-between p-4"
                 >
                     <div className="flex items-center gap-2">
